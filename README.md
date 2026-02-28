@@ -1,6 +1,6 @@
-# orbit
-
-**O**ffline **R**eview **B**oard **I**n **T**erminal.
+<p align="center">
+  <img src="docs/logo.png" alt="orbit" width="480">
+</p>
 
 A terminal-based code review tool. Browse git diffs, leave comments on specific lines, then export everything as a prompt you can paste into Claude Code or any other AI tool.
 

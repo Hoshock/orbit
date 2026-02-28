@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120" fill="none">
+  <!-- Background -->
+  <rect width="480" height="120" rx="12" fill="#1c2128"/>
+
+  <!-- Orbit ring -->
+  <ellipse cx="60" cy="60" rx="34" ry="14" stroke="#57ab5a" stroke-width="2.5" transform="rotate(-25 60 60)" opacity="0.7"/>
+  <ellipse cx="60" cy="60" rx="34" ry="14" stroke="#f47067" stroke-width="2.5" transform="rotate(25 60 60)" opacity="0.7"/>
+
+  <!-- Outer circle border -->
+  <circle cx="60" cy="60" r="38" stroke="#adbac7" stroke-width="1.5" fill="none"/>
+
+  <!-- Core circle (diff dot) -->
+  <circle cx="60" cy="60" r="8" fill="#539bf5"/>
+
+  <!-- Orbiting dot -->
+  <circle cx="92" cy="52" r="4" fill="#f69d50"/>
+
+  <!-- Text: orbit -->
+  <text x="115" y="72" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', monospace" font-size="48" font-weight="700" fill="#adbac7">orbit</text>
+
+  <!-- Subtitle -->
+  <text x="117" y="92" font-family="'SF Mono', 'Fira Code', 'JetBrains Mono', monospace" font-size="11" fill="#636e7b" letter-spacing="1">Offline Review Board In Terminal</text>
+</svg>
