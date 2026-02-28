@@ -137,6 +137,62 @@ bun run check             # lint + build check
 bun run lint              # auto-fix lint issues
 ```
 
+## Syntax highlighting
+
+orbit uses [tree-sitter](https://tree-sitter.github.io/) for syntax highlighting. The following languages are currently supported:
+
+| Language   | Source                                         |
+| ---------- | ---------------------------------------------- |
+| JavaScript | OpenTUI built-in                               |
+| TypeScript | OpenTUI built-in                               |
+| Markdown   | OpenTUI built-in                               |
+| Zig        | OpenTUI built-in                               |
+| Python     | Bundled grammar (`assets/tree-sitter/python/`) |
+
+### Adding a new language
+
+1. **Get the `.wasm` grammar and `highlights.scm`**
+
+   ```sh
+   mkdir -p assets/tree-sitter/<language>
+
+   # Prebuilt wasm from unpkg
+   curl -L "https://unpkg.com/tree-sitter-wasms@latest/out/tree-sitter-<language>.wasm" \
+     -o assets/tree-sitter/<language>/tree-sitter-<language>.wasm
+
+   # Highlight queries from the official tree-sitter grammar repo
+   curl -L "https://raw.githubusercontent.com/tree-sitter/tree-sitter-<language>/master/queries/highlights.scm" \
+     -o assets/tree-sitter/<language>/highlights.scm
+   ```
+
+   Verify the `.wasm` starts with `\0asm` (not a 404 page): `xxd ... | head -1`
+
+2. **Register the parser in `src/index.tsx`**
+
+   ```tsx
+   import langWasm from "../assets/tree-sitter/<language>/tree-sitter-<language>.wasm" with { type: "file" };
+   import langHighlights from "../assets/tree-sitter/<language>/highlights.scm" with { type: "file" };
+   ```
+
+   Then add an entry to the `addDefaultParsers()` call:
+
+   ```tsx
+   addDefaultParsers([
+     // ... existing entries
+     {
+       filetype: "<language>",
+       wasm: resolve(__dir, langWasm),
+       queries: { highlights: [resolve(__dir, langHighlights)] },
+     },
+   ]);
+   ```
+
+3. **Ensure `filetype.ts` has the mapping** — `src/utils/filetype.ts` maps file extensions to language names. Add an entry if it doesn't exist yet.
+
+4. **Add a LICENSE file** — Place a `LICENSE` in `assets/tree-sitter/<language>/` with the MIT notice from the grammar repo. See `assets/tree-sitter/python/LICENSE` for the format.
+
+5. **Verify** — `bun run check` should show the new `.wasm` and `.scm` in the build output.
+
 ## License
 
 MIT

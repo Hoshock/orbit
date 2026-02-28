@@ -1,9 +1,29 @@
-import { type CliRenderer, createCliRenderer } from "@opentui/core";
+import { dirname, resolve } from "node:path";
+import {
+  addDefaultParsers,
+  type CliRenderer,
+  createCliRenderer,
+} from "@opentui/core";
 import { createRoot } from "@opentui/react";
+import pythonHighlights from "../assets/tree-sitter/python/highlights.scm" with {
+  type: "file",
+};
+import pythonWasm from "../assets/tree-sitter/python/tree-sitter-python.wasm" with {
+  type: "file",
+};
 import { App } from "./app.tsx";
 import { buildDiffArgs, parseArgs } from "./cli/args.ts";
 import { parseDiffFiles } from "./data/diff-parser.ts";
 import { getRepoRoot, resolveShortHash } from "./utils/git.ts";
+
+const __dir = dirname(new URL(import.meta.url).pathname);
+addDefaultParsers([
+  {
+    filetype: "python",
+    wasm: resolve(__dir, pythonWasm),
+    queries: { highlights: [resolve(__dir, pythonHighlights)] },
+  },
+]);
 
 let renderer: CliRenderer;
 
