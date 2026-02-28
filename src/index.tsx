@@ -13,6 +13,8 @@ import pythonWasm from "../assets/tree-sitter/python/tree-sitter-python.wasm" wi
 };
 import { App } from "./app.tsx";
 import { buildDiffArgs, parseArgs } from "./cli/args.ts";
+import { getCachePath, loadComments } from "./data/comment-cache.ts";
+import { commentStore } from "./data/comment-store.ts";
 import { parseDiffFiles } from "./data/diff-parser.ts";
 import { getRepoRoot, resolveShortHash } from "./utils/git.ts";
 
@@ -99,6 +101,14 @@ async function main() {
     console.log("No changes found.");
     process.exit(0);
   }
+
+  // Restore cached comments from previous session
+  const cachePath = getCachePath(repoRoot, options.base, options.target);
+  const cached = loadComments(cachePath);
+  if (cached.length > 0) {
+    commentStore.loadFromCache(cached);
+  }
+  commentStore.setCachePath(cachePath);
 
   renderer = await createCliRenderer({
     exitOnCtrlC: true,
