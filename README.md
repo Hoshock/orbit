@@ -125,6 +125,14 @@ Extract this into a helper, it's duplicated in three places.
 
 Paste that into Claude Code (or any LLM) and it has enough context to act on each comment.
 
+## Comment persistence
+
+Comments are automatically saved to `/tmp` on every add, edit, and delete. When you reopen orbit with the same diff range, your comments are restored.
+
+- Cache file: `/tmp/orbit-<repo>-<hash>.json`
+- The hash is derived from the diff range (e.g., `HEAD~1..HEAD`), so different ranges get separate caches
+- Cache files live in `/tmp` and are cleared on OS restart
+
 ## Stack
 
 - [Bun](https://bun.sh) - runtime and test runner

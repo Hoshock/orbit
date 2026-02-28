@@ -1,4 +1,5 @@
 import type { ReviewComment } from "../types.ts";
+import { saveComments } from "./comment-cache.ts";
 
 type Listener = () => void;
 
@@ -6,6 +7,7 @@ class CommentStore {
   private comments: ReviewComment[] = [];
   private listeners = new Set<Listener>();
   private snapshotCache: ReviewComment[] | null = null;
+  private cachePath: string | null = null;
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -19,6 +21,22 @@ class CommentStore {
     return this.snapshotCache;
   };
 
+  setCachePath(path: string) {
+    this.cachePath = path;
+  }
+
+  /** Bulk-load comments from cache without triggering flush. */
+  loadFromCache(comments: ReviewComment[]) {
+    this.comments = [...comments];
+    this.notify();
+  }
+
+  private flush() {
+    if (this.cachePath) {
+      saveComments(this.cachePath, this.comments);
+    }
+  }
+
   private notify() {
     this.snapshotCache = null;
     for (const listener of this.listeners) {
@@ -28,6 +46,7 @@ class CommentStore {
 
   add(comment: ReviewComment) {
     this.comments.push(comment);
+    this.flush();
     this.notify();
   }
 
@@ -36,12 +55,14 @@ class CommentStore {
     if (comment) {
       comment.body = body;
       comment.updatedAt = new Date().toISOString();
+      this.flush();
       this.notify();
     }
   }
 
   remove(id: string) {
     this.comments = this.comments.filter((c) => c.id !== id);
+    this.flush();
     this.notify();
   }
 
@@ -50,6 +71,7 @@ class CommentStore {
     if (comment) {
       comment.resolved = !comment.resolved;
       comment.updatedAt = new Date().toISOString();
+      this.flush();
       this.notify();
     }
   }
