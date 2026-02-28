@@ -10,7 +10,7 @@ interface HeaderProps {
 export function Header({ title, commentCount, extra }: HeaderProps) {
   const { width } = useTerminalDimensions();
 
-  const left = ` crev: ${title}`;
+  const left = ` orbit: ${title}`;
   const right = commentCount > 0 ? `${commentCount} comments ` : "";
   const mid = extra ? `  ${extra}` : "";
 

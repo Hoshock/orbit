@@ -12,7 +12,7 @@ export interface ReviewComment {
   resolved: boolean;
 }
 
-export interface CrevDiffFile {
+export interface DiffFile {
   path: string;
   oldPath?: string;
   status: "modified" | "added" | "deleted" | "renamed";
@@ -29,11 +29,11 @@ export type AppMode =
   | "comment-list"
   | "prompt-preview";
 
-export interface CrevSession {
+export interface OrbitSession {
   base: string;
   target: string;
   repoRoot: string;
-  files: CrevDiffFile[];
+  files: DiffFile[];
   viewedFiles: Set<string>;
 }
 
@@ -41,4 +41,8 @@ export interface CliOptions {
   base: string;
   target: string;
   splitMode: boolean;
+  /** Short hash for old (base) side, resolved at startup */
+  oldHash?: string;
+  /** Short hash for new (target) side, resolved at startup */
+  newHash?: string;
 }

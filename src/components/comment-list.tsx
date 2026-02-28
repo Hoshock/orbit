@@ -5,9 +5,14 @@ import type { ReviewComment } from "../types.ts";
 interface CommentListProps {
   comments: ReviewComment[];
   selectedIndex: number;
+  onSelectComment?: (index: number) => void;
 }
 
-export function CommentList({ comments, selectedIndex }: CommentListProps) {
+export function CommentList({
+  comments,
+  selectedIndex,
+  onSelectComment,
+}: CommentListProps) {
   const { width, height } = useTerminalDimensions();
   const listHeight = height - 2;
 
@@ -31,10 +36,14 @@ export function CommentList({ comments, selectedIndex }: CommentListProps) {
         const isSelected = realIdx === selectedIndex;
         const lineStr =
           typeof c.position.line === "number"
-            ? `L${c.position.line}`
-            : `L${c.position.line.start}-${c.position.line.end}`;
+            ? `L${String(c.position.line)}`
+            : `L${String(c.position.line.start)}-${String(c.position.line.end)}`;
+        const sideStr = c.position.side === "old" ? "(old)" : "";
         const resolved = c.resolved ? " [resolved]" : "";
         const prefix = isSelected ? " > " : "   ";
+        const firstLine = c.body.split("\n")[0] ?? "";
+
+        const line = `${prefix}${c.filePath}:${lineStr}${sideStr}  ${firstLine}${resolved}`;
 
         return (
           <text
@@ -42,14 +51,9 @@ export function CommentList({ comments, selectedIndex }: CommentListProps) {
             width={width}
             backgroundColor={isSelected ? COLORS.selected : undefined}
             bold={isSelected}
+            onMouseDown={() => onSelectComment?.(realIdx)}
           >
-            {prefix}
-            <text color={COLORS[c.resolved ? "headerDim" : "comment"]}>
-              {`${c.filePath}:${lineStr}`}
-            </text>
-            {"  "}
-            {c.body.split("\n")[0]}
-            {resolved}
+            {line}
           </text>
         );
       })}
