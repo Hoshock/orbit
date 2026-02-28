@@ -1,12 +1,15 @@
 import { useTerminalDimensions } from "@opentui/react";
+import { useCallback, useRef } from "react";
 import { COLORS, STATUS_ICONS } from "../constants.ts";
-import type { CrevDiffFile, ReviewComment } from "../types.ts";
+import type { DiffFile, ReviewComment } from "../types.ts";
 
 interface FileListProps {
-  files: CrevDiffFile[];
+  files: DiffFile[];
   selectedIndex: number;
   comments: ReviewComment[];
   viewedFiles: Set<string>;
+  onSelectFile?: (index: number) => void;
+  onOpenFile?: (index: number) => void;
 }
 
 export function FileList({
@@ -14,9 +17,29 @@ export function FileList({
   selectedIndex,
   comments,
   viewedFiles,
+  onSelectFile,
+  onOpenFile,
 }: FileListProps) {
   const { width, height } = useTerminalDimensions();
   const listHeight = height - 2; // header + help bar
+  const lastClickRef = useRef<{ index: number; time: number }>({
+    index: -1,
+    time: 0,
+  });
+
+  const handleRowClick = useCallback(
+    (index: number) => {
+      const now = Date.now();
+      const last = lastClickRef.current;
+      if (last.index === index && now - last.time < 400) {
+        onOpenFile?.(index);
+      } else {
+        onSelectFile?.(index);
+      }
+      lastClickRef.current = { index, time: now };
+    },
+    [onSelectFile, onOpenFile],
+  );
 
   // Count comments per file
   const commentCounts = new Map<string, number>();
@@ -36,28 +59,39 @@ export function FileList({
         const viewed = viewedFiles.has(file.path);
         const count = commentCounts.get(file.path) ?? 0;
         const icon = STATUS_ICONS[file.status] ?? "?";
-        const statusColor = COLORS[file.status] ?? "white";
-
-        const commentStr = count > 0 ? `  ${count}` : "";
-        const viewedMark = viewed ? " " : "";
         const prefix = isSelected ? " > " : "   ";
+
+        if (isSelected) {
+          const stats = `+${String(file.additions)} -${String(file.deletions)}`;
+          const commentSuffix = count > 0 ? `  ${String(count)}` : "";
+          const viewedSuffix = viewed ? " \u2713" : "";
+          return (
+            <text
+              key={file.path}
+              width={width}
+              bg={COLORS.selected}
+              color="white"
+              bold
+              onMouseDown={() => handleRowClick(realIdx)}
+            >
+              {`${prefix}${icon}  ${file.path}  ${stats}${commentSuffix}${viewedSuffix}`}
+            </text>
+          );
+        }
 
         return (
           <text
             key={file.path}
             width={width}
-            backgroundColor={isSelected ? COLORS.selected : undefined}
-            bold={isSelected}
+            onMouseDown={() => handleRowClick(realIdx)}
           >
-            {prefix}
-            <text color={statusColor}>{icon}</text>
-            {"  "}
-            {file.path}
-            {"  "}
-            <text color={COLORS.addition}>+{file.additions}</text>{" "}
-            <text color={COLORS.deletion}>-{file.deletions}</text>
-            {commentStr && <text color={COLORS.comment}>{commentStr}</text>}
-            {viewedMark}
+            {`${prefix}${icon}  ${file.path}  `}
+            <span fg={COLORS.addition}>{`+${String(file.additions)}`}</span>{" "}
+            <span fg={COLORS.deletion}>{`-${String(file.deletions)}`}</span>
+            {count > 0 ? (
+              <span fg={COLORS.comment}>{`  ${String(count)}`}</span>
+            ) : null}
+            {viewed ? " \u2713" : ""}
           </text>
         );
       })}

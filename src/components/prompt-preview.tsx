@@ -21,9 +21,7 @@ export function PromptPreview({ prompt, commentCount }: PromptPreviewProps) {
 
   return (
     <scrollbox height={height - 2} width={width}>
-      <code language="markdown" width={width}>
-        {prompt}
-      </code>
+      <code content={prompt} filetype="markdown" width={width} />
     </scrollbox>
   );
 }

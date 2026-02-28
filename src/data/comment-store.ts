@@ -1,9 +1,4 @@
 import type { ReviewComment } from "../types.ts";
-import {
-  loadComments,
-  type StorageKey,
-  saveComments,
-} from "./comment-storage.ts";
 
 type Listener = () => void;
 
@@ -11,7 +6,6 @@ class CommentStore {
   private comments: ReviewComment[] = [];
   private listeners = new Set<Listener>();
   private snapshotCache: ReviewComment[] | null = null;
-  private storageKey: StorageKey | null = null;
 
   subscribe = (listener: Listener): (() => void) => {
     this.listeners.add(listener);
@@ -30,13 +24,6 @@ class CommentStore {
     for (const listener of this.listeners) {
       listener();
     }
-    this.persist();
-  }
-
-  init(key: StorageKey) {
-    this.storageKey = key;
-    this.comments = loadComments(key);
-    this.notify();
   }
 
   add(comment: ReviewComment) {
@@ -87,10 +74,10 @@ class CommentStore {
     return [...this.comments];
   }
 
-  private persist() {
-    if (this.storageKey) {
-      saveComments(this.storageKey, this.comments);
-    }
+  /** Reset all comments (for testing). */
+  reset() {
+    this.comments = [];
+    this.notify();
   }
 }
 

@@ -1,0 +1,58 @@
+import { getTreeSitterClient } from "@opentui/core";
+import { useMemo } from "react";
+import { COLORS } from "../constants.ts";
+import { collapseDiff } from "../data/diff-collapse.ts";
+import { syntaxStyle } from "../theme.ts";
+import type { DiffFile } from "../types.ts";
+import { getFiletype } from "../utils/filetype.ts";
+
+interface DiffPreviewProps {
+  file: DiffFile | null;
+  splitMode: boolean;
+  width: number;
+  height: number;
+}
+
+export function DiffPreview({
+  file,
+  splitMode,
+  width,
+  height,
+}: DiffPreviewProps) {
+  const collapsedDiff = useMemo(
+    () => (file ? collapseDiff(file.rawDiff, new Set()).diff : ""),
+    [file?.rawDiff, file],
+  );
+
+  if (!file) {
+    return (
+      <box width={width} height={height} flexDirection="column">
+        <text color={COLORS.headerDim} width={width}>
+          {"  No file selected"}
+        </text>
+      </box>
+    );
+  }
+
+  const statusChar = file.status[0]?.toUpperCase() ?? "?";
+  const header = ` ${file.path} [${statusChar}] +${file.additions}/-${file.deletions}`;
+
+  return (
+    <box flexDirection="column" width={width} height={height}>
+      <text color={COLORS.headerDim} width={width}>
+        {header}
+      </text>
+      <scrollbox height={height - 1} width={width}>
+        <diff
+          diff={collapsedDiff}
+          view={splitMode ? "split" : "unified"}
+          wrapMode="none"
+          width={width}
+          syntaxStyle={syntaxStyle}
+          filetype={getFiletype(file.path)}
+          treeSitterClient={getTreeSitterClient()}
+        />
+      </scrollbox>
+    </box>
+  );
+}

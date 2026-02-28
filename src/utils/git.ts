@@ -17,10 +17,12 @@ export function runGit(args: string[], cwd?: string): string {
   return result.stdout.toString();
 }
 
-export function getRemoteUrl(): string | null {
+/** Resolve a ref to a short hash. Returns the ref itself on failure (e.g. unstaged). */
+export function resolveShortHash(ref: string, cwd?: string): string {
+  if (!ref || ref === "--staged") return ref;
   try {
-    return runGit(["config", "--get", "remote.origin.url"]).trim();
+    return runGit(["rev-parse", "--short", ref], cwd).trim();
   } catch {
-    return null;
+    return ref;
   }
 }

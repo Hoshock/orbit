@@ -1,5 +1,5 @@
 {
-  "name": "crev",
+  "name": "orbit",
   "module": "src/index.tsx",
   "type": "module",
   "private": true,
@@ -15,6 +15,7 @@
     "start": "bun run src/index.tsx",
     "build": "bun build src/index.tsx --target=bun --outdir=dist",
     "lint": "bunx biome check --write --unsafe src/",
+    "test": "bun test",
     "check": "bunx biome check src/ && bun build src/index.tsx --target=bun --outdir=dist",
     "register": "bash scripts/register.sh"
   },

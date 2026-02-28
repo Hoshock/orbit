@@ -1,28 +1,40 @@
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { formatDiffRange } from "./cli/args.ts";
 import { CommentForm } from "./components/comment-form.tsx";
 import { CommentList } from "./components/comment-list.tsx";
 import { DiffView } from "./components/diff-view.tsx";
-import { FileList } from "./components/file-list.tsx";
 import { Header } from "./components/header.tsx";
 import { HelpBar } from "./components/help-bar.tsx";
+import { HomeScreen } from "./components/home-screen.tsx";
 import { PromptPreview } from "./components/prompt-preview.tsx";
 import { commentStore } from "./data/comment-store.ts";
-import { getLineFromDiff } from "./data/diff-parser.ts";
-import { formatPrompt, formatSingleComment } from "./data/prompt-formatter.ts";
+import { collapseDiff } from "./data/diff-collapse.ts";
+import {
+  displayLineToSourceLine,
+  displayLineToSourceLineSplit,
+  displayRangeToSourceRange,
+  displayRangeToSourceRangeSplit,
+  getDisplayLineCount,
+  getLineFromDiff,
+  sourceLineToDisplayLine,
+  sourceLineToDisplayLineSplit,
+} from "./data/diff-parser.ts";
+import { formatPrompt } from "./data/prompt-formatter.ts";
 import { shutdown } from "./index.tsx";
-import type {
-  AppMode,
-  CliOptions,
-  CrevDiffFile,
-  ReviewComment,
-} from "./types.ts";
+import type { AppMode, CliOptions, DiffFile, ReviewComment } from "./types.ts";
 import { copyToClipboard } from "./utils/clipboard.ts";
-import { openInEditor } from "./utils/editor.ts";
+import { buildFileTree, flattenTree } from "./utils/file-tree.ts";
 
 interface AppProps {
-  files: CrevDiffFile[];
+  files: DiffFile[];
   options: CliOptions;
 }
 
@@ -33,16 +45,34 @@ export function App({ files, options }: AppProps) {
     commentStore.getSnapshot,
   );
 
-  // App state
   const [mode, setMode] = useState<AppMode>("file-list");
   const [fileIndex, setFileIndex] = useState(0);
   const [cursorLine, setCursorLine] = useState(1);
   const [commentIndex, setCommentIndex] = useState(0);
   const [splitMode, setSplitMode] = useState(options.splitMode);
-  const [viewedFiles, setViewedFiles] = useState<Set<string>>(new Set());
+  const [viewedFiles] = useState<Set<string>>(new Set());
   const [flash, setFlash] = useState("");
   const [editingComment, setEditingComment] = useState<ReviewComment | null>(
     null,
+  );
+  const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+  // In split mode: which side is focused ("old" = before, "new" = after)
+  const [activeSide, setActiveSide] = useState<"old" | "new">("new");
+
+  // Tree state for file-list mode
+  const [treeIndex, setTreeIndex] = useState(0);
+  const [previewSplitMode, setPreviewSplitMode] = useState(options.splitMode);
+  const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+
+  // Fold/unfold state: file path → expanded fold IDs
+  const [expandedFolds, setExpandedFolds] = useState<Map<string, Set<number>>>(
+    new Map(),
+  );
+
+  const fileTree = useMemo(() => buildFileTree(files), [files]);
+  const flatRows = useMemo(
+    () => flattenTree(fileTree, files, collapsedDirs),
+    [fileTree, files, collapsedDirs],
   );
 
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -56,238 +86,367 @@ export function App({ files, options }: AppProps) {
   const currentFile = files[fileIndex];
   const diffRange = formatDiffRange(options);
 
-  // Build rawDiffs map for prompt formatter
-  const rawDiffs = new Map<string, string>();
-  for (const f of files) {
-    rawDiffs.set(f.path, f.rawDiff);
+  // Collapsed diff for the current file (fold/unfold)
+  const visibleDiff = useMemo(() => {
+    if (!currentFile) return null;
+    const exp = expandedFolds.get(currentFile.path) ?? new Set();
+    return collapseDiff(currentFile.rawDiff, exp);
+  }, [currentFile, expandedFolds]);
+  const activeDiff = visibleDiff?.diff ?? currentFile?.rawDiff ?? "";
+
+  // Ref for cursor restoration after fold toggle
+  const foldCursorRef = useRef<{
+    line: number;
+    side: "old" | "new";
+  } | null>(null);
+
+  const pendingRangeRef = useRef<{ start: number; end: number } | null>(null);
+
+  const selectionRange =
+    selectionAnchor !== null
+      ? {
+          start: Math.min(selectionAnchor, cursorLine),
+          end: Math.max(selectionAnchor, cursorLine),
+        }
+      : mode === "comment-input" && pendingRangeRef.current
+        ? pendingRangeRef.current
+        : null;
+
+  // ── Mode-aware conversion helpers ──
+  function resolveSource(
+    rawDiff: string,
+    displayLine: number,
+  ): { oldLine: number | null; newLine: number | null } {
+    return splitMode
+      ? displayLineToSourceLineSplit(rawDiff, displayLine)
+      : displayLineToSourceLine(rawDiff, displayLine);
   }
 
-  // Compute max line from diff for cursor bounds
-  function getMaxLine(rawDiff: string): number {
-    let max = 1;
-    const lines = rawDiff.split("\n");
-    for (const line of lines) {
-      const match = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
-      if (match) {
-        const start = parseInt(match[1]!, 10);
-        const count = parseInt(match[2] ?? "1", 10);
-        max = Math.max(max, start + count - 1);
+  /** Get { line, side } for comment storage. In split mode uses activeSide. */
+  function resolveLineAndSide(
+    rawDiff: string,
+    displayLine: number,
+  ): { line: number; side: "old" | "new" } | null {
+    const src = resolveSource(rawDiff, displayLine);
+    if (splitMode) {
+      const line = activeSide === "new" ? src.newLine : src.oldLine;
+      return line !== null ? { line, side: activeSide } : null;
+    }
+    if (src.newLine !== null) return { line: src.newLine, side: "new" };
+    if (src.oldLine !== null) return { line: src.oldLine, side: "old" };
+    return null;
+  }
+
+  function resolveRangeAndSide(
+    rawDiff: string,
+    start: number,
+    end: number,
+  ): { start: number; end: number; side: "old" | "new" } | null {
+    if (splitMode) {
+      return displayRangeToSourceRangeSplit(rawDiff, start, end, activeSide);
+    }
+    return displayRangeToSourceRange(rawDiff, start, end);
+  }
+
+  function resolveDisplayLine(
+    rawDiff: string,
+    sourceLine: number,
+    side: "old" | "new",
+  ): number | null {
+    return splitMode
+      ? sourceLineToDisplayLineSplit(rawDiff, sourceLine, side)
+      : sourceLineToDisplayLine(rawDiff, sourceLine, side);
+  }
+
+  function findCommentAtLine(displayLine: number): ReviewComment | undefined {
+    if (!currentFile) return undefined;
+    const src = resolveSource(activeDiff, displayLine);
+    return comments.find((c) => {
+      if (c.filePath !== currentFile.path) return false;
+      const matchLine = c.position.side === "new" ? src.newLine : src.oldLine;
+      if (matchLine === null) return false;
+      if (typeof c.position.line === "number")
+        return c.position.line === matchLine;
+      return (
+        matchLine >= c.position.line.start && matchLine <= c.position.line.end
+      );
+    });
+  }
+
+  function toggleFold(filePath: string, foldId: number) {
+    setExpandedFolds((prev) => {
+      const next = new Map(prev);
+      const set = new Set(next.get(filePath) ?? []);
+      if (set.has(foldId)) set.delete(foldId);
+      else set.add(foldId);
+      next.set(filePath, set);
+      return next;
+    });
+  }
+
+  function findNearestFold(cursorSourceLine: number) {
+    if (!visibleDiff) return null;
+    let best: (typeof visibleDiff.folds)[0] | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const fold of visibleDiff.folds) {
+      const dist = Math.min(
+        Math.abs(cursorSourceLine - fold.newLineStart),
+        Math.abs(cursorSourceLine - fold.newLineEnd),
+      );
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = fold;
       }
     }
-    return max;
+    return best;
   }
 
-  // Navigate between files
-  function goToFile(index: number) {
-    const clamped = Math.max(0, Math.min(index, files.length - 1));
-    setFileIndex(clamped);
-    setCursorLine(1);
-  }
+  // Restore cursor position after fold toggle
+  useEffect(() => {
+    if (foldCursorRef.current && visibleDiff) {
+      const { line, side } = foldCursorRef.current;
+      const dispLine = splitMode
+        ? sourceLineToDisplayLineSplit(visibleDiff.diff, line, side)
+        : sourceLineToDisplayLine(visibleDiff.diff, line, side);
+      setCursorLine(dispLine ?? 1);
+      foldCursorRef.current = null;
+    }
+  }, [visibleDiff, splitMode]);
 
-  // Find next/prev comment in current file
-  function jumpToComment(direction: 1 | -1) {
-    if (!currentFile) return;
-    const fileComments = comments
-      .filter((c) => c.filePath === currentFile.path)
-      .sort((a, b) => {
-        const aLine =
-          typeof a.position.line === "number"
-            ? a.position.line
-            : a.position.line.start;
-        const bLine =
-          typeof b.position.line === "number"
-            ? b.position.line
-            : b.position.line.start;
-        return aLine - bLine;
-      });
-
-    if (fileComments.length === 0) return;
-
-    if (direction === 1) {
-      const next = fileComments.find((c) => {
-        const line =
-          typeof c.position.line === "number"
-            ? c.position.line
-            : c.position.line.start;
-        return line > cursorLine;
-      });
-      if (next) {
-        setCursorLine(
-          typeof next.position.line === "number"
-            ? next.position.line
-            : next.position.line.start,
-        );
-      }
+  function startComment(linePos: number | { start: number; end: number }) {
+    setEditingComment(null);
+    if (typeof linePos === "number") {
+      setCursorLine(linePos);
+      pendingRangeRef.current = null;
     } else {
-      const prev = [...fileComments].reverse().find((c) => {
-        const line =
-          typeof c.position.line === "number"
-            ? c.position.line
-            : c.position.line.start;
-        return line < cursorLine;
-      });
-      if (prev) {
-        setCursorLine(
-          typeof prev.position.line === "number"
-            ? prev.position.line
-            : prev.position.line.start,
-        );
-      }
+      setCursorLine(linePos.start);
+      pendingRangeRef.current = linePos;
     }
+    setSelectionAnchor(null);
+    setMode("comment-input");
   }
 
   useKeyboard((key) => {
-    // Comment input mode: only handle Ctrl+E (textarea handles rest)
     if (mode === "comment-input") {
-      if (key.ctrl && key.name === "e") {
-        const result = openInEditor(editingComment?.body ?? "");
-        if (result !== null) {
-          handleCommentSubmit(result);
-        }
+      if (key.name === "escape") {
+        handleCommentCancel();
         return;
       }
       return;
     }
 
-    // File list mode
+    // ── file-list ──
     if (mode === "file-list") {
       switch (key.name) {
+        case "escape":
         case "q":
           shutdown();
           return;
-        case "j":
         case "down":
-          setFileIndex((i) => Math.min(i + 1, files.length - 1));
+          setTreeIndex((i) => Math.min(i + 1, flatRows.length - 1));
           return;
-        case "k":
         case "up":
-          setFileIndex((i) => Math.max(i - 1, 0));
+          setTreeIndex((i) => Math.max(i - 1, 0));
           return;
-        case "return":
-          if (currentFile) {
-            setMode("diff-view");
-            setCursorLine(1);
+        case "left": {
+          const row = flatRows[treeIndex];
+          if (!row) return;
+          if (row.node.isDir && !collapsedDirs.has(row.node.path)) {
+            // Collapse expanded directory
+            setCollapsedDirs((prev) => {
+              const next = new Set(prev);
+              next.add(row.node.path);
+              return next;
+            });
+          } else {
+            // Jump to parent directory
+            const parentPath = row.node.path.includes("/")
+              ? row.node.path.slice(0, row.node.path.lastIndexOf("/"))
+              : null;
+            if (parentPath) {
+              const parentIdx = flatRows.findIndex(
+                (r) => r.node.path === parentPath && r.node.isDir,
+              );
+              if (parentIdx >= 0) setTreeIndex(parentIdx);
+            }
           }
           return;
-        case "space":
-          if (currentFile) {
-            setViewedFiles((prev) => {
+        }
+        case "right": {
+          const row = flatRows[treeIndex];
+          if (row?.node.isDir && collapsedDirs.has(row.node.path)) {
+            setCollapsedDirs((prev) => {
               const next = new Set(prev);
-              if (next.has(currentFile.path)) {
-                next.delete(currentFile.path);
-              } else {
-                next.add(currentFile.path);
-              }
+              next.delete(row.node.path);
               return next;
             });
           }
           return;
-        case "tab":
-          // Jump to next file with comments
-          for (let offset = 1; offset <= files.length; offset++) {
-            const idx = (fileIndex + offset) % files.length;
-            const f = files[idx];
-            if (f && comments.some((c) => c.filePath === f.path)) {
-              setFileIndex(idx);
-              return;
-            }
+        }
+        case "return": {
+          const row = flatRows[treeIndex];
+          if (!row) return;
+          if (row.node.isDir) {
+            // Toggle directory expand/collapse
+            setCollapsedDirs((prev) => {
+              const next = new Set(prev);
+              if (next.has(row.node.path)) {
+                next.delete(row.node.path);
+              } else {
+                next.add(row.node.path);
+              }
+              return next;
+            });
+          } else if (row.fileIndex !== null) {
+            setFileIndex(row.fileIndex);
+            setCursorLine(1);
+            setMode("diff-view");
           }
           return;
+        }
         case "t":
-          setSplitMode((s) => !s);
+          setPreviewSplitMode((s) => !s);
           return;
-      }
-
-      // Shift+C or uppercase C
-      if (key.name === "c" && key.shift) {
-        setMode("comment-list");
-        setCommentIndex(0);
-        return;
-      }
-      if (key.name === "p" && key.shift) {
-        setMode("prompt-preview");
-        return;
+        case "c":
+          setMode("comment-list");
+          setCommentIndex(0);
+          return;
+        case "p":
+          setMode("prompt-preview");
+          return;
       }
       return;
     }
 
-    // Diff view mode
+    // ── diff-view ──
     if (mode === "diff-view") {
       if (!currentFile) return;
-      const maxLine = getMaxLine(currentFile.rawDiff);
+      const maxLine = getDisplayLineCount(activeDiff, splitMode);
 
+      switch (key.name) {
+        case "escape":
+          if (selectionAnchor !== null) {
+            setSelectionAnchor(null);
+          } else {
+            setMode("file-list");
+          }
+          return;
+        case "q":
+          setSelectionAnchor(null);
+          setMode("file-list");
+          return;
+        case "down":
+          if (key.shift) {
+            if (selectionAnchor === null) setSelectionAnchor(cursorLine);
+            setCursorLine((l) => Math.min(l + 1, maxLine));
+          } else {
+            if (selectionAnchor !== null) setSelectionAnchor(null);
+            setCursorLine((l) => Math.min(l + 1, maxLine));
+          }
+          return;
+        case "up":
+          if (key.shift) {
+            if (selectionAnchor === null) setSelectionAnchor(cursorLine);
+            setCursorLine((l) => Math.max(l - 1, 1));
+          } else {
+            if (selectionAnchor !== null) setSelectionAnchor(null);
+            setCursorLine((l) => Math.max(l - 1, 1));
+          }
+          return;
+        case "left":
+          if (splitMode) {
+            setActiveSide("old");
+          }
+          return;
+        case "right":
+          if (splitMode) {
+            setActiveSide("new");
+          }
+          return;
+        case "c": {
+          if (selectionRange) {
+            const rangeInfo = resolveRangeAndSide(
+              activeDiff,
+              selectionRange.start,
+              selectionRange.end,
+            );
+            if (!rangeInfo) {
+              showFlash("No lines on this side");
+              return;
+            }
+            startComment(selectionRange);
+          } else {
+            const info = resolveLineAndSide(activeDiff, cursorLine);
+            if (!info) {
+              showFlash("No line on this side");
+              return;
+            }
+            startComment(cursorLine);
+          }
+          return;
+        }
+        case "f": {
+          // File-level comment (line=0)
+          setCursorLine(0);
+          setEditingComment(null);
+          pendingRangeRef.current = null;
+          setMode("comment-input");
+          return;
+        }
+        case "z": {
+          // Toggle nearest fold
+          const info = resolveLineAndSide(activeDiff, cursorLine);
+          if (info) foldCursorRef.current = info;
+          const fold = findNearestFold(info?.line ?? 0);
+          if (fold) {
+            const exp =
+              expandedFolds.get(currentFile.path) ?? new Set<number>();
+            const willExpand = !exp.has(fold.id);
+            toggleFold(currentFile.path, fold.id);
+            showFlash(
+              willExpand
+                ? `Expanded L${fold.newLineStart}-${fold.newLineEnd} (${fold.hiddenCount} lines)`
+                : `Collapsed L${fold.newLineStart}-${fold.newLineEnd} (${fold.hiddenCount} lines)`,
+            );
+          } else {
+            showFlash("No fold nearby");
+          }
+          return;
+        }
+        case "e": {
+          const existing = findCommentAtLine(cursorLine);
+          if (existing) {
+            setEditingComment(existing);
+            pendingRangeRef.current = null;
+            setMode("comment-input");
+          }
+          return;
+        }
+        case "d": {
+          const existing = findCommentAtLine(cursorLine);
+          if (existing) {
+            commentStore.remove(existing.id);
+            showFlash("Comment deleted");
+          }
+          return;
+        }
+        case "t":
+          setSplitMode((s) => !s);
+          return;
+      }
+      return;
+    }
+
+    // ── comment-list ──
+    if (mode === "comment-list") {
       switch (key.name) {
         case "escape":
         case "q":
           setMode("file-list");
           return;
-        case "j":
-        case "down":
-          if (key.shift) {
-            setCursorLine((l) => Math.min(l + 10, maxLine));
-          } else {
-            setCursorLine((l) => Math.min(l + 1, maxLine));
-          }
-          return;
-        case "k":
-        case "up":
-          if (key.shift) {
-            setCursorLine((l) => Math.max(l - 10, 1));
-          } else {
-            setCursorLine((l) => Math.max(l - 1, 1));
-          }
-          return;
-        case "g":
-          // gg → go to top (simplified: single g goes to top)
-          setCursorLine(1);
-          return;
-        case "c":
-          if (!key.shift) {
-            setMode("comment-input");
-            setEditingComment(null);
-          } else {
-            setMode("comment-list");
-            setCommentIndex(0);
-          }
-          return;
-        case "n":
-          if (key.shift) {
-            jumpToComment(-1);
-          } else {
-            jumpToComment(1);
-          }
-          return;
-        case "tab":
-          if (key.shift) {
-            goToFile(fileIndex - 1);
-          } else {
-            goToFile(fileIndex + 1);
-          }
-          return;
-        case "t":
-          setSplitMode((s) => !s);
-          return;
-      }
-
-      // G → go to bottom
-      if (key.name === "g" && key.shift) {
-        setCursorLine(maxLine);
-        return;
-      }
-      return;
-    }
-
-    // Comment list mode
-    if (mode === "comment-list") {
-      switch (key.name) {
-        case "escape":
-          setMode("file-list");
-          return;
-        case "j":
         case "down":
           setCommentIndex((i) => Math.min(i + 1, comments.length - 1));
           return;
-        case "k":
         case "up":
           setCommentIndex((i) => Math.max(i - 1, 0));
           return;
@@ -297,11 +456,20 @@ export function App({ files, options }: AppProps) {
             const fIdx = files.findIndex((f) => f.path === selected.filePath);
             if (fIdx >= 0) {
               setFileIndex(fIdx);
-              setCursorLine(
+              const exp =
+                expandedFolds.get(files[fIdx]!.path) ?? new Set<number>();
+              const collapsed = collapseDiff(files[fIdx]!.rawDiff, exp);
+              const srcLine =
                 typeof selected.position.line === "number"
                   ? selected.position.line
-                  : selected.position.line.start,
+                  : selected.position.line.start;
+              const dispLine = resolveDisplayLine(
+                collapsed.diff,
+                srcLine,
+                selected.position.side,
               );
+              setCursorLine(dispLine ?? 1);
+              setActiveSide(selected.position.side);
               setMode("diff-view");
             }
           }
@@ -313,6 +481,22 @@ export function App({ files, options }: AppProps) {
             setEditingComment(selected);
             const fIdx = files.findIndex((f) => f.path === selected.filePath);
             if (fIdx >= 0) setFileIndex(fIdx);
+            pendingRangeRef.current = null;
+            const targetIdx = fIdx >= 0 ? fIdx : fileIndex;
+            const exp =
+              expandedFolds.get(files[targetIdx]!.path) ?? new Set<number>();
+            const collapsed = collapseDiff(files[targetIdx]!.rawDiff, exp);
+            const srcLine =
+              typeof selected.position.line === "number"
+                ? selected.position.line
+                : selected.position.line.start;
+            const dispLine = resolveDisplayLine(
+              collapsed.diff,
+              srcLine,
+              selected.position.side,
+            );
+            setCursorLine(dispLine ?? 1);
+            setActiveSide(selected.position.side);
             setMode("comment-input");
           }
           return;
@@ -328,40 +512,22 @@ export function App({ files, options }: AppProps) {
           }
           return;
         }
-        case "y": {
-          if (key.shift) {
-            // Y: copy all comments as prompt
-            const prompt = formatPrompt(comments, { rawDiffs });
-            if (copyToClipboard(prompt)) {
-              showFlash(`Copied ${comments.length} comments as prompt`);
-            }
-          } else {
-            // y: copy single comment
-            const selected = comments[commentIndex];
-            if (selected) {
-              const prompt = formatSingleComment(
-                selected,
-                rawDiffs.get(selected.filePath),
-              );
-              if (copyToClipboard(prompt)) {
-                showFlash("Copied comment");
-              }
-            }
-          }
-          return;
-        }
       }
       return;
     }
 
-    // Prompt preview mode
+    // ── prompt-preview ──
     if (mode === "prompt-preview") {
       switch (key.name) {
         case "escape":
+        case "q":
           setMode("file-list");
           return;
         case "y": {
-          const prompt = formatPrompt(comments, { rawDiffs });
+          const prompt = formatPrompt(comments, {
+            oldHash: options.oldHash,
+            newHash: options.newHash,
+          });
           if (copyToClipboard(prompt)) {
             showFlash("Prompt copied to clipboard");
           }
@@ -377,90 +543,254 @@ export function App({ files, options }: AppProps) {
       commentStore.update(editingComment.id, body);
       showFlash("Comment updated");
     } else if (currentFile) {
-      const codeLine = getLineFromDiff(currentFile.rawDiff, cursorLine, "new");
+      const range = pendingRangeRef.current;
+      const displayPos: number | { start: number; end: number } = range
+        ? range.start === range.end
+          ? range.start
+          : range
+        : cursorLine;
+
+      let sourcePos: number | { start: number; end: number };
+      let side: "old" | "new";
+      let codeSnapshot: { content: string } | undefined;
+
+      if (typeof displayPos === "number") {
+        const info = resolveLineAndSide(activeDiff, displayPos);
+        side = info?.side ?? "new";
+        sourcePos = info?.line ?? displayPos;
+        if (typeof sourcePos === "number" && sourcePos > 0) {
+          const codeLine = getLineFromDiff(activeDiff, sourcePos, side);
+          codeSnapshot = codeLine ? { content: codeLine } : undefined;
+        }
+      } else {
+        const rangeInfo = resolveRangeAndSide(
+          activeDiff,
+          displayPos.start,
+          displayPos.end,
+        );
+        side = rangeInfo?.side ?? activeSide;
+        const start = rangeInfo?.start ?? displayPos.start;
+        const end = rangeInfo?.end ?? displayPos.end;
+        sourcePos = start === end ? start : { start, end };
+        const sStart =
+          typeof sourcePos === "number" ? sourcePos : sourcePos.start;
+        const sEnd = typeof sourcePos === "number" ? sourcePos : sourcePos.end;
+        const codeLines: string[] = [];
+        for (let l = sStart; l <= sEnd; l++) {
+          const line = getLineFromDiff(activeDiff, l, side);
+          if (line) codeLines.push(line);
+        }
+        codeSnapshot =
+          codeLines.length > 0 ? { content: codeLines.join("\n") } : undefined;
+      }
+
       const comment: ReviewComment = {
         id: crypto.randomUUID(),
         filePath: currentFile.path,
         body,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        position: { side: "new", line: cursorLine },
-        codeSnapshot: codeLine ? { content: codeLine } : undefined,
+        position: { side, line: sourcePos },
+        codeSnapshot,
         resolved: false,
       };
       commentStore.add(comment);
       showFlash("Comment added");
     }
+    pendingRangeRef.current = null;
     setEditingComment(null);
     setMode("diff-view");
   }
 
   function handleCommentCancel() {
+    pendingRangeRef.current = null;
     setEditingComment(null);
     setMode("diff-view");
   }
 
-  // Header title
-  const headerTitle =
-    mode === "file-list"
-      ? `${diffRange}  (${files.length} files, ${comments.length} comments)`
-      : mode === "diff-view" && currentFile
-        ? `${currentFile.path} [${currentFile.status[0]?.toUpperCase()}] +${currentFile.additions}/-${currentFile.deletions}  ${splitMode ? "split" : "unified"}`
-        : mode === "comment-input"
-          ? `Comment on ${currentFile?.path ?? ""}:L${cursorLine}`
-          : mode === "comment-list"
-            ? `All Comments (${comments.length})`
-            : `Prompt Preview (${comments.filter((c) => !c.resolved).length} comments)`;
+  // ── Header title ──
+  function buildHeaderTitle(): string {
+    if (mode === "file-list") {
+      return `${diffRange}  (${files.length} files, ${comments.length} comments)`;
+    }
+    if ((mode === "diff-view" || mode === "comment-input") && currentFile) {
+      const filePart = `${currentFile.path} [${currentFile.status[0]?.toUpperCase()}] +${currentFile.additions}/-${currentFile.deletions}`;
+      if (mode === "comment-input") {
+        if (cursorLine === 0) {
+          return `Comment: ${currentFile.path} (file)`;
+        }
+        if (pendingRangeRef.current) {
+          const rangeInfo = resolveRangeAndSide(
+            activeDiff,
+            pendingRangeRef.current.start,
+            pendingRangeRef.current.end,
+          );
+          if (rangeInfo) {
+            return `Comment: ${currentFile.path}:L${rangeInfo.start}-${rangeInfo.end} (${rangeInfo.side})`;
+          }
+        }
+        const info = resolveLineAndSide(activeDiff, cursorLine);
+        if (info) {
+          return `Comment: ${currentFile.path}:L${info.line} (${info.side})`;
+        }
+        return `Comment: ${currentFile.path}:L${cursorLine}`;
+      }
+      // diff-view header
+      const info = resolveLineAndSide(activeDiff, cursorLine);
+      let linePart: string;
+      if (info) {
+        linePart = `L${info.line}(${info.side})`;
+      } else {
+        linePart = `L${cursorLine}`;
+      }
+      if (selectionRange) linePart += " VISUAL";
+      const modePart = splitMode
+        ? `split [${activeSide === "old" ? "OLD" : "old"}|${activeSide === "new" ? "NEW" : "new"}]`
+        : "unified";
+      return `${filePart}  ${linePart}  ${modePart}`;
+    }
+    if (mode === "comment-list") {
+      return `All Comments (${comments.length})`;
+    }
+    return `Prompt Preview (${comments.filter((c) => !c.resolved).length} comments)`;
+  }
+
+  const showDiff =
+    (mode === "diff-view" || (mode === "comment-input" && cursorLine > 0)) &&
+    currentFile;
 
   return (
     <box flexDirection="column" width={width} height={height}>
-      <Header title={headerTitle} commentCount={comments.length} />
+      <Header title={buildHeaderTitle()} commentCount={comments.length} />
 
-      {mode === "file-list" && (
-        <FileList
+      {mode === "file-list" ? (
+        <HomeScreen
           files={files}
-          selectedIndex={fileIndex}
+          rows={flatRows}
+          selectedIndex={treeIndex}
           comments={comments}
           viewedFiles={viewedFiles}
+          collapsedDirs={collapsedDirs}
+          previewSplitMode={previewSplitMode}
+          onSelectRow={(i) => setTreeIndex(i)}
+          onOpenFile={(rowIdx) => {
+            const row = flatRows[rowIdx];
+            if (!row) return;
+            if (row.node.isDir) {
+              setCollapsedDirs((prev) => {
+                const next = new Set(prev);
+                if (next.has(row.node.path)) {
+                  next.delete(row.node.path);
+                } else {
+                  next.add(row.node.path);
+                }
+                return next;
+              });
+            } else if (row.fileIndex !== null) {
+              setFileIndex(row.fileIndex);
+              setCursorLine(1);
+              setMode("diff-view");
+            }
+          }}
         />
-      )}
+      ) : null}
 
-      {mode === "diff-view" && currentFile && (
+      {showDiff ? (
         <DiffView
-          file={currentFile}
+          file={{ ...currentFile, rawDiff: activeDiff }}
           cursorLine={cursorLine}
           comments={comments}
           splitMode={splitMode}
-        />
-      )}
-
-      {mode === "comment-input" && currentFile && (
-        <CommentForm
-          filePath={currentFile.path}
-          line={cursorLine}
-          side="new"
-          codeLine={
-            getLineFromDiff(currentFile.rawDiff, cursorLine, "new") ?? undefined
+          activeSide={activeSide}
+          selectionRange={selectionRange}
+          maxHeight={
+            mode === "comment-input"
+              ? Math.max(Math.floor((height - 2) * 0.5), 6)
+              : undefined
           }
-          onSubmit={handleCommentSubmit}
-          onCancel={handleCommentCancel}
-          onEditorOpen={() => {}}
-          initialBody={editingComment?.body}
+          onCursorChange={
+            mode === "diff-view"
+              ? (line) => {
+                  const maxLine = getDisplayLineCount(activeDiff, splitMode);
+                  setCursorLine(Math.min(line, maxLine));
+                }
+              : undefined
+          }
         />
-      )}
+      ) : null}
 
-      {mode === "comment-list" && (
-        <CommentList comments={comments} selectedIndex={commentIndex} />
-      )}
+      {mode === "comment-input" && cursorLine === 0 && currentFile ? (
+        <box flexGrow={1} />
+      ) : null}
 
-      {mode === "prompt-preview" && (
+      {mode === "comment-input" && currentFile
+        ? (() => {
+            let srcLine = 0;
+            let srcSide: "old" | "new" = activeSide;
+            if (cursorLine > 0) {
+              const info = resolveLineAndSide(activeDiff, cursorLine);
+              if (info) {
+                srcLine = info.line;
+                srcSide = info.side;
+              }
+            }
+            const rangeInfo = pendingRangeRef.current
+              ? resolveRangeAndSide(
+                  activeDiff,
+                  pendingRangeRef.current.start,
+                  pendingRangeRef.current.end,
+                )
+              : null;
+            if (rangeInfo) {
+              srcSide = rangeInfo.side;
+              srcLine = rangeInfo.start;
+            }
+            return (
+              <CommentForm
+                filePath={currentFile.path}
+                line={srcLine}
+                lineRange={rangeInfo}
+                side={srcSide}
+                codeLine={
+                  srcLine > 0
+                    ? (getLineFromDiff(activeDiff, srcLine, srcSide) ??
+                      undefined)
+                    : undefined
+                }
+                onSubmit={handleCommentSubmit}
+                onCancel={handleCommentCancel}
+                initialBody={editingComment?.body}
+                maxHeight={
+                  cursorLine === 0 ? height - 4 : Math.floor((height - 2) * 0.5)
+                }
+              />
+            );
+          })()
+        : null}
+
+      {mode === "comment-list" ? (
+        <CommentList
+          comments={comments}
+          selectedIndex={commentIndex}
+          onSelectComment={(i) => setCommentIndex(i)}
+        />
+      ) : null}
+
+      {mode === "prompt-preview" ? (
         <PromptPreview
-          prompt={formatPrompt(comments, { rawDiffs })}
+          prompt={formatPrompt(comments, {
+            oldHash: options.oldHash,
+            newHash: options.newHash,
+          })}
           commentCount={comments.filter((c) => !c.resolved).length}
         />
-      )}
+      ) : null}
 
-      <HelpBar mode={mode} flash={flash} />
+      <HelpBar
+        mode={mode}
+        flash={flash}
+        splitMode={mode === "file-list" ? previewSplitMode : splitMode}
+      />
     </box>
   );
 }

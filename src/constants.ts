@@ -6,12 +6,12 @@ export const COLORS = {
   renamed: "cyan",
 
   // UI
-  selected: "blue",
+  selected: "#264f78",
   header: "cyan",
   headerDim: "gray",
-  comment: "magenta",
-  commentHighlight: "#5c3566",
-  cursorLine: "#1a3a5c",
+  comment: "#e0a050",
+  commentHighlight: "#7a4a00",
+  cursorLine: "#264f78",
   helpKey: "yellow",
   helpText: "gray",
   flash: "green",
