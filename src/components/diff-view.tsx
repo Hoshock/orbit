@@ -37,6 +37,10 @@ export function DiffView({
   const { width, height } = useTerminalDimensions();
   const diffRef = useRef<any>(null);
   const scrollRef = useRef<any>(null);
+  // Track scroll position in a ref to avoid relying on scrollbox's internal
+  // scrollTop which can get reset/clamped when the scrollbox height changes
+  // (e.g. comment-input half-height → diff-view full-height transition).
+  const scrollTopRef = useRef(0);
 
   const totalLines = useMemo(
     () => getDisplayLineCount(file.rawDiff, splitMode),
@@ -61,6 +65,8 @@ export function DiffView({
   const currentComments = useMemo(
     () =>
       fileComments.filter((c) => {
+        // In split mode, only show comments for the focused panel
+        if (splitMode && c.position.side !== activeSide) return false;
         const matchLine =
           c.position.side === "new"
             ? cursorSource.newLine
@@ -72,7 +78,7 @@ export function DiffView({
           matchLine >= c.position.line.start && matchLine <= c.position.line.end
         );
       }),
-    [fileComments, cursorSource],
+    [fileComments, cursorSource, splitMode, activeSide],
   );
 
   const commentPanelHeight =
@@ -142,14 +148,16 @@ export function DiffView({
     if (sb) {
       const row = cursorLine - 1;
       const maxScrollTop = Math.max(0, totalLines - diffHeight);
-      let top = Math.min(sb.scrollTop ?? 0, maxScrollTop);
+      let top = Math.min(scrollTopRef.current, maxScrollTop);
 
       if (row < top) {
         top = row;
       } else if (row >= top + diffHeight) {
         top = row - diffHeight + 1;
       }
-      sb.scrollTop = Math.min(top, maxScrollTop);
+      top = Math.min(top, maxScrollTop);
+      sb.scrollTop = top;
+      scrollTopRef.current = top;
     }
   }, [
     cursorLine,
@@ -170,10 +178,7 @@ export function DiffView({
         width={width}
         onMouseDown={(event: any) => {
           if (!onCursorChange) return;
-          const sb = scrollRef.current;
-          if (!sb) return;
-          const scrollTop = sb.scrollTop ?? 0;
-          const line = scrollTop + event.y + 1;
+          const line = scrollTopRef.current + event.y + 1;
           onCursorChange(Math.max(1, line));
         }}
       >
