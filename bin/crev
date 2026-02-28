@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+SELF="$0"
+[ -L "$SELF" ] && SELF="$(readlink "$SELF")"
+exec bun run "$(dirname "$SELF")/../src/index.tsx" "$@"
