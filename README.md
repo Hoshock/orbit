@@ -8,9 +8,7 @@ A terminal-based code review tool. Browse git diffs, leave comments on specific 
 
 ## Why
 
-Inspired by [difit](https://github.com/yoshiko-pg/difit), a great browser-based local diff viewer. Commenting on lines works in the browser, but not yet in the TUI. I wanted a fully terminal-native experience with a customizable syntax highlighting theme, split view, and a prompt export workflow for AI coding assistants -- so I built orbit.
-
-Code review in the terminal is fast but you lose the ability to annotate. GitHub PRs let you comment but require a browser and a remote. orbit sits in between: you get a full diff viewer with line-level comments, all from your terminal, all offline.
+Inspired by [difit](https://github.com/yoshiko-pg/difit), a great browser-based local diff viewer. Commenting on lines works in the browser, but not yet in the TUI. I wanted a fully terminal-native diff reviewer with line-level comments, a customizable syntax highlighting theme, split view, and a prompt export workflow for AI coding assistants -- so I built orbit.
 
 The key trick is the prompt export. Your review comments become a structured prompt that an AI coding assistant can act on directly. Review a diff, jot down what needs fixing, copy the prompt, paste it, done.
 
