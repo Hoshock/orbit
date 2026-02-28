@@ -18,9 +18,9 @@ The key trick is the prompt export. Your review comments become a structured pro
 
 ![Home screen](docs/home-screen.png)
 
-**Diff view** -- unified diff with syntax highlighting, fold/unfold
+**Unified view** -- unified diff with syntax highlighting, fold/unfold
 
-![Diff view](docs/diff-view.png)
+![Unified view](docs/unified-view.png)
 
 **Split view** -- side-by-side comparison
 
@@ -29,6 +29,10 @@ The key trick is the prompt export. Your review comments become a structured pro
 **Comment** -- add review comments on any line
 
 ![Comment](docs/comment.png)
+
+**Prompt preview** -- export comments as a structured prompt
+
+![Prompt preview](docs/prompt-preview.png)
 
 ## Install
 
