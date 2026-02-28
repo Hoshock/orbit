@@ -64,9 +64,9 @@ orbit --split             # side-by-side view
 | `Up/Down`    | Move cursor                   |
 | `Left/Right` | Collapse/expand directory     |
 | `Enter`      | Open diff or toggle directory |
-| `t`          | Toggle split/unified          |
 | `c`          | Comment list                  |
 | `p`          | Prompt preview                |
+| `t`          | Toggle split/unified          |
 
 ### Diff view
 
@@ -77,11 +77,11 @@ orbit --split             # side-by-side view
 | `Left/Right`    | Switch side (split mode)             |
 | `Shift+Up/Down` | Select range                         |
 | `c`             | Comment on current line or selection |
-| `f`             | File-level comment                   |
-| `z`             | Fold/unfold context                  |
-| `t`             | Toggle split/unified                 |
-| `e`             | Edit comment at cursor               |
 | `d`             | Delete comment at cursor             |
+| `e`             | Edit comment at cursor               |
+| `f`             | File-level comment                   |
+| `t`             | Toggle split/unified                 |
+| `z`             | Fold/unfold context                  |
 
 ### Comment input
 
