@@ -1,6 +1,6 @@
 # orbit
 
-Offline Review Board In Terminal.
+**O**ffline **R**eview **B**oard **I**n **T**erminal.
 
 A terminal-based code review tool. Browse git diffs, leave comments on specific lines, then export everything as a prompt you can paste into Claude Code or any other AI tool.
 
@@ -9,6 +9,24 @@ A terminal-based code review tool. Browse git diffs, leave comments on specific 
 Code review in the terminal is fast but you lose the ability to annotate. GitHub PRs let you comment but require a browser and a remote. orbit sits in between: you get a full diff viewer with line-level comments, all from your terminal, all offline.
 
 The key trick is the prompt export. Your review comments become a structured prompt that an AI coding assistant can act on directly. Review a diff, jot down what needs fixing, copy the prompt, paste it, done.
+
+## Screenshots
+
+**Home screen** -- file tree with diff preview
+
+![Home screen](docs/home-screen.png)
+
+**Diff view** -- unified diff with syntax highlighting, fold/unfold
+
+![Diff view](docs/diff-view.png)
+
+**Split view** -- side-by-side comparison
+
+![Split view](docs/split-view.png)
+
+**Comment** -- add review comments on any line
+
+![Comment](docs/comment.png)
 
 ## Install
 
