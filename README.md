@@ -60,52 +60,52 @@ orbit --split             # side-by-side view
 
 | Key          | Action                        |
 | ------------ | ----------------------------- |
+| `q/Esc`      | Quit                          |
 | `Up/Down`    | Move cursor                   |
 | `Left/Right` | Collapse/expand directory     |
 | `Enter`      | Open diff or toggle directory |
+| `t`          | Toggle split/unified          |
 | `c`          | Comment list                  |
 | `p`          | Prompt preview                |
-| `t`          | Toggle split/unified          |
-| `q/Esc`      | Quit                          |
 
 ### Diff view
 
 | Key             | Action                               |
 | --------------- | ------------------------------------ |
+| `Esc/q`         | Back to file list                    |
 | `Up/Down`       | Move by line                         |
-| `Shift+Up/Down` | Select range                         |
 | `Left/Right`    | Switch side (split mode)             |
+| `Shift+Up/Down` | Select range                         |
 | `c`             | Comment on current line or selection |
 | `f`             | File-level comment                   |
-| `e`             | Edit comment at cursor               |
-| `d`             | Delete comment at cursor             |
 | `z`             | Fold/unfold context                  |
 | `t`             | Toggle split/unified                 |
-| `Esc/q`         | Back to file list                    |
+| `e`             | Edit comment at cursor               |
+| `d`             | Delete comment at cursor             |
 
 ### Comment input
 
 | Key          | Action |
 | ------------ | ------ |
-| `Ctrl+Enter` | Submit |
 | `Esc`        | Cancel |
+| `Ctrl+Enter` | Submit |
 
 ### Comment list
 
 | Key       | Action            |
 | --------- | ----------------- |
+| `Esc/q`   | Back to file list |
 | `Up/Down` | Move cursor       |
 | `Enter`   | Jump to comment   |
-| `e`       | Edit comment      |
 | `d`       | Delete comment    |
-| `Esc/q`   | Back to file list |
+| `e`       | Edit comment      |
 
 ### Prompt preview
 
 | Key     | Action                   |
 | ------- | ------------------------ |
-| `y`     | Copy prompt to clipboard |
 | `Esc/q` | Back                     |
+| `y`     | Copy prompt to clipboard |
 
 ## How the prompt works
 
