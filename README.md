@@ -63,11 +63,10 @@ orbit --split             # side-by-side view
 | `Up/Down`    | Move cursor                   |
 | `Left/Right` | Collapse/expand directory     |
 | `Enter`      | Open diff or toggle directory |
-| `Space`      | Toggle file as viewed         |
 | `c`          | Comment list                  |
-| `P`          | Prompt preview                |
+| `p`          | Prompt preview                |
 | `t`          | Toggle split/unified          |
-| `q`          | Quit                          |
+| `q/Esc`      | Quit                          |
 
 ### Diff view
 
@@ -82,7 +81,7 @@ orbit --split             # side-by-side view
 | `d`             | Delete comment at cursor             |
 | `z`             | Fold/unfold context                  |
 | `t`             | Toggle split/unified                 |
-| `Esc`           | Back to file list                    |
+| `Esc/q`         | Back to file list                    |
 
 ### Comment input
 
@@ -91,16 +90,26 @@ orbit --split             # side-by-side view
 | `Ctrl+Enter` | Submit |
 | `Esc`        | Cancel |
 
+### Comment list
+
+| Key       | Action            |
+| --------- | ----------------- |
+| `Up/Down` | Move cursor       |
+| `Enter`   | Jump to comment   |
+| `e`       | Edit comment      |
+| `d`       | Delete comment    |
+| `Esc/q`   | Back to file list |
+
 ### Prompt preview
 
-| Key   | Action                   |
-| ----- | ------------------------ |
-| `y`   | Copy prompt to clipboard |
-| `Esc` | Back                     |
+| Key     | Action                   |
+| ------- | ------------------------ |
+| `y`     | Copy prompt to clipboard |
+| `Esc/q` | Back                     |
 
 ## How the prompt works
 
-Each comment you leave records the file path, line number, which side of the diff (old/new), and the code at that line. When you press `P` to preview and `y` to copy, orbit formats all of this into a single text block:
+Each comment you leave records the file path, line number, which side of the diff (old/new), and the code at that line. When you press `p` to preview and `y` to copy, orbit formats all of this into a single text block:
 
 ```
 src/app.tsx:L42 (a1b2c3d)
