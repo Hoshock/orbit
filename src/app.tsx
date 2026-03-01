@@ -27,6 +27,7 @@ import {
   displayLineToSourceLineSplit,
   displayRangeToSourceRange,
   displayRangeToSourceRangeSplit,
+  findNearestFoldIdByDisplayLine,
   getDisplayLineCount,
   getLineFromDiff,
   markerLinesUnifiedToSplit,
@@ -250,23 +251,6 @@ export function App({
         matchLine >= c.position.line.start && matchLine <= c.position.line.end
       );
     });
-  }
-
-  function findNearestFold(cursorSourceLine: number) {
-    if (!visibleDiff) return null;
-    let best: (typeof visibleDiff.folds)[0] | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const fold of visibleDiff.folds) {
-      const dist = Math.min(
-        Math.abs(cursorSourceLine - fold.newLineStart),
-        Math.abs(cursorSourceLine - fold.newLineEnd),
-      );
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = fold;
-      }
-    }
-    return best;
   }
 
   function startComment(linePos: number | { start: number; end: number }) {
@@ -497,17 +481,26 @@ export function App({
             targetFoldId = markerFoldId;
             action = "expand";
           } else {
-            const info = resolveLineAndSide(activeDiff, cursorLine);
-            const fold = findNearestFold(info?.line ?? 0);
-            if (!fold) {
+            const nearestFoldId = findNearestFoldIdByDisplayLine(
+              activeDiff,
+              visibleDiff.folds,
+              cursorLine,
+              splitMode,
+            );
+            if (nearestFoldId === null) {
               showFlash("No fold nearby");
               return;
             }
-            targetFoldId = fold.id;
+            targetFoldId = nearestFoldId;
             const expMap =
               expandedFolds.get(currentFile.path) ?? new Map<number, number>();
-            const revealed = expMap.get(fold.id) ?? 0;
-            action = revealed >= fold.hiddenCount ? "collapse" : "expand";
+            const nearestFold = visibleDiff.folds.find(
+              (f) => f.id === nearestFoldId,
+            );
+            if (!nearestFold) return;
+            const revealed = expMap.get(nearestFold.id) ?? 0;
+            action =
+              revealed >= nearestFold.hiddenCount ? "collapse" : "expand";
           }
 
           const fold = visibleDiff.folds.find((f) => f.id === targetFoldId);

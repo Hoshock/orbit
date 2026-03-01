@@ -29,6 +29,40 @@ describe("orbit --help", () => {
     expect(stdout).toContain("Workflow:");
   });
 
+  it("shows current file-list keybindings", () => {
+    const { stdout, exitCode } = run("--help");
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("v toggle viewed");
+    expect(stdout).toContain("c comment list");
+    expect(stdout).toContain("p prompt preview");
+    expect(stdout).not.toContain("Space toggle viewed");
+  });
+
+  it("keeps file-list keybinding order aligned with README/help-bar", () => {
+    const { stdout, exitCode } = run("--help");
+
+    expect(exitCode).toBe(0);
+    const lines = stdout.split("\n");
+    const start = lines.findIndex((line) => line.includes("file-list:"));
+    const end = lines.findIndex((line) => line.includes("diff-view:"));
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const joined = lines.slice(start, end).join(" ");
+    expect(joined).toMatch(
+      /Enter open diff.*c comment list.*p prompt preview.*t split\/unified.*v toggle viewed/,
+    );
+  });
+
+  it("shows usage commands in README order", () => {
+    const { stdout, exitCode } = run("--help");
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toMatch(
+      /orbit\s+unstaged changes.*orbit \.\s+same as above.*orbit --staged\s+staged changes.*orbit HEAD\s+last commit.*orbit HEAD~3\.\.HEAD\s+commit range.*orbit feature main\s+branch comparison.*orbit --split\s+side-by-side view.*orbit --root SHA~1\.\.SHA\s+diff against empty tree if base is unresolvable/s,
+    );
+  });
+
   it("-h also prints help", () => {
     const { stdout, exitCode } = run("-h");
 

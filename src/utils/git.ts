@@ -37,5 +37,16 @@ export function refExists(ref: string, cwd?: string): boolean {
 
 /** Get the hash of an empty tree object (for diffing root commits). */
 export function getEmptyTreeHash(cwd?: string): string {
-  return runGit(["hash-object", "-t", "tree", "/dev/null"], cwd).trim();
+  const result = Bun.spawnSync(
+    ["git", "hash-object", "-t", "tree", "--stdin"],
+    {
+      cwd: cwd ?? process.cwd(),
+      stdin: new Uint8Array(0),
+    },
+  );
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString().trim();
+    throw new Error(`git hash-object -t tree --stdin failed: ${stderr}`);
+  }
+  return result.stdout.toString().trim();
 }

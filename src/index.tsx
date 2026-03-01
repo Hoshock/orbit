@@ -55,6 +55,8 @@ Usage:
   orbit HEAD              last commit (HEAD~1..HEAD)
   orbit HEAD~3..HEAD      commit range
   orbit feature main      branch comparison
+  orbit --split           side-by-side view
+  orbit --root SHA~1..SHA diff against empty tree if base is unresolvable
 
 Options:
   --staged                staged changes
@@ -63,12 +65,14 @@ Options:
   -h, --help              show this help
 
 Keybindings:
-  file-list:  \u2191\u2193 move  Enter open diff  Space toggle viewed
-              c file comment  C comment list  P prompt preview
-              t split/unified  q quit
+  file-list:  Esc/q quit  \u2191\u2193 move  \u2190\u2192 open/close  [] resize
+              Enter open diff  c comment list  p prompt preview
+              t split/unified  v toggle viewed
   diff-view:  \u2191\u2193 move lines  Shift+\u2191\u2193 select range
-              c comment on line  f file comment  z fold/unfold
-              t split/unified  Esc back
+              \u2190\u2192 switch side (split)  c comment on line/selection
+              d delete comment  e edit comment  f file comment
+              t split/unified  v toggle viewed  z fold/unfold
+              Esc/q back
   comment:    Ctrl+Enter submit  Esc cancel
   comments:   Enter jump  e edit  d delete  Esc back
   prompt:     y copy to clipboard  Esc back
@@ -77,7 +81,7 @@ Workflow:
   1. Open diff with orbit HEAD (or other range)
   2. Browse files with arrow keys, Enter to view diff
   3. Navigate diff lines, press c to add review comments
-  4. Press P to preview all comments as a prompt
+  4. Press p to preview all comments as a prompt
   5. Press y to copy the prompt to clipboard
   6. Paste into Claude Code or other AI tool for automated fixes`;
 

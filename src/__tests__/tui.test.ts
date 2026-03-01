@@ -1,15 +1,19 @@
 import { describe, expect, it, mock } from "bun:test";
+import { setMaxListeners } from "node:events";
 import { testRender } from "@opentui/react/test-utils";
-import { createElement } from "react";
+import { act, createElement, useMemo, useState } from "react";
 import { CommentList } from "../components/comment-list.tsx";
 import { DiffView } from "../components/diff-view.tsx";
-import { FileList } from "../components/file-list.tsx";
+import { FileTree } from "../components/file-tree.tsx";
 import { Header } from "../components/header.tsx";
 import { HelpBar } from "../components/help-bar.tsx";
+import { HomeScreen } from "../components/home-screen.tsx";
 import { PromptPreview } from "../components/prompt-preview.tsx";
 import type { DiffFile, ReviewComment } from "../types.ts";
+import { buildFileTree, flattenTree } from "../utils/file-tree.ts";
 
 const RENDER_OPTS = { width: 80, height: 24 };
+setMaxListeners(50);
 
 function makeFile(overrides: Partial<DiffFile> = {}): DiffFile {
   return {
@@ -121,8 +125,8 @@ describe("HelpBar component", () => {
   });
 });
 
-// ── FileList ──
-describe("FileList component", () => {
+// ── FileTree ──
+describe("FileTree component", () => {
   const files: DiffFile[] = [
     makeFile({
       path: "src/main.py",
@@ -143,78 +147,47 @@ describe("FileList component", () => {
       deletions: 80,
     }),
   ];
+  const rows = flattenTree(buildFileTree(files), files, new Set<string>());
 
-  it("renders file list with paths", async () => {
+  it("renders tree rows with directories and files", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      createElement(FileList, {
-        files,
-        selectedIndex: 0,
-        comments: [],
-        viewedFiles: new Set<string>(),
-      }),
-      RENDER_OPTS,
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("src/main.py");
-    expect(frame).toContain("src/utils.py");
-    expect(frame).toContain("tests/old.py");
-  });
-
-  it("shows selection indicator on selected file", async () => {
-    const { captureCharFrame, renderOnce } = await testRender(
-      createElement(FileList, {
-        files,
+      createElement(FileTree, {
+        rows,
         selectedIndex: 1,
         comments: [],
         viewedFiles: new Set<string>(),
+        collapsedDirs: new Set<string>(),
+        width: 40,
+        height: 10,
+        onSelectRow: () => {},
+        onOpenFile: () => {},
       }),
       RENDER_OPTS,
     );
     await renderOnce();
     const frame = captureCharFrame();
-    // Selected file should have ">" indicator
-    const lines = frame.split("\n");
-    const utilsLine = lines.find((l: string) => l.includes("src/utils.py"));
-    expect(utilsLine).toContain(">");
+    expect(frame).toContain("src/");
+    expect(frame).toContain("main.py");
+    expect(frame).toContain("utils.py");
   });
 
-  it("shows comment counts per file", async () => {
-    const comments = [
-      makeComment({ id: "c1", filePath: "src/main.py" }),
-      makeComment({ id: "c2", filePath: "src/main.py" }),
-    ];
-    const { captureCharFrame, renderOnce } = await testRender(
-      createElement(FileList, {
-        files,
-        selectedIndex: 0,
-        comments,
-        viewedFiles: new Set<string>(),
-      }),
-      RENDER_OPTS,
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    const mainLine = frame
-      .split("\n")
-      .find((l: string) => l.includes("src/main.py"));
-    expect(mainLine).toContain("2");
-  });
-
-  it("calls onSelectFile when clicking a row", async () => {
+  it("calls onSelectRow when clicking a row", async () => {
     const onSelect = mock(() => {});
     const { mockMouse, renderOnce } = await testRender(
-      createElement(FileList, {
-        files,
+      createElement(FileTree, {
+        rows,
         selectedIndex: 0,
         comments: [],
         viewedFiles: new Set<string>(),
-        onSelectFile: onSelect,
+        collapsedDirs: new Set<string>(),
+        width: 40,
+        height: 10,
+        onSelectRow: onSelect,
+        onOpenFile: () => {},
       }),
       RENDER_OPTS,
     );
     await renderOnce();
-    // Click on y=1 (second file row, 0-indexed)
     await mockMouse.click(10, 1);
     await renderOnce();
     expect(onSelect).toHaveBeenCalledWith(1);
@@ -222,41 +195,96 @@ describe("FileList component", () => {
 
   it("calls onOpenFile on double-click", async () => {
     const onOpen = mock(() => {});
-    const onSelect = mock(() => {});
     const { mockMouse, renderOnce } = await testRender(
-      createElement(FileList, {
-        files,
-        selectedIndex: 0,
+      createElement(FileTree, {
+        rows,
+        selectedIndex: 1,
         comments: [],
         viewedFiles: new Set<string>(),
-        onSelectFile: onSelect,
+        collapsedDirs: new Set<string>(),
+        width: 40,
+        height: 10,
+        onSelectRow: () => {},
         onOpenFile: onOpen,
       }),
       RENDER_OPTS,
     );
     await renderOnce();
-    // Double-click on first row
-    await mockMouse.click(10, 0);
+    await mockMouse.click(10, 1);
     await renderOnce();
-    await mockMouse.click(10, 0);
+    await mockMouse.click(10, 1);
     await renderOnce();
-    expect(onOpen).toHaveBeenCalledWith(0);
+    expect(onOpen).toHaveBeenCalledWith(1);
   });
+});
 
-  it("shows addition/deletion counts", async () => {
+// ── HomeScreen ──
+describe("HomeScreen component", () => {
+  const files: DiffFile[] = [
+    makeFile({ path: "src/main.py" }),
+    makeFile({ path: "src/utils.py" }),
+  ];
+  const rows = flattenTree(buildFileTree(files), files, new Set<string>());
+
+  it("renders file tree and preview header", async () => {
     const { captureCharFrame, renderOnce } = await testRender(
-      createElement(FileList, {
+      createElement(HomeScreen, {
         files,
-        selectedIndex: 0,
+        rows,
+        selectedIndex: 1,
         comments: [],
         viewedFiles: new Set<string>(),
+        collapsedDirs: new Set<string>(),
+        previewSplitMode: false,
+        treePercent: 0.3,
+        expandedFolds: new Map<string, Map<number, number>>(),
+        onTreeResize: () => {},
+        onSelectRow: () => {},
+        onOpenFile: () => {},
       }),
       RENDER_OPTS,
     );
     await renderOnce();
     const frame = captureCharFrame();
-    expect(frame).toContain("+10");
-    expect(frame).toContain("-5");
+    expect(frame).toContain("src/main.py");
+    expect(frame).toContain("+10/-5");
+  });
+
+  it("keeps last previewed file when selection moves to a directory", async () => {
+    function Harness() {
+      const [selectedIndex, setSelectedIndex] = useState(1);
+      const stableRows = useMemo(
+        () => flattenTree(buildFileTree(files), files, new Set<string>()),
+        [],
+      );
+      return createElement(HomeScreen, {
+        files,
+        rows: stableRows,
+        selectedIndex,
+        comments: [],
+        viewedFiles: new Set<string>(),
+        collapsedDirs: new Set<string>(),
+        previewSplitMode: false,
+        treePercent: 0.3,
+        expandedFolds: new Map<string, Map<number, number>>(),
+        onTreeResize: () => {},
+        onSelectRow: setSelectedIndex,
+        onOpenFile: () => {},
+      });
+    }
+
+    const { captureCharFrame, mockMouse, renderOnce } = await testRender(
+      createElement(Harness),
+      RENDER_OPTS,
+    );
+    await renderOnce();
+    await act(async () => {
+      await mockMouse.click(5, 0); // select top-level directory row
+      await renderOnce();
+    });
+    const frame = captureCharFrame();
+    expect(frame).toContain("src/main.py");
+    expect(frame).toContain("+10/-5");
   });
 });
 
@@ -518,49 +546,6 @@ describe("HelpBar component (additional)", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("Saved!");
     expect(frame).not.toContain("comment");
-  });
-});
-
-// ── FileList extras ──
-describe("FileList component (additional)", () => {
-  it("shows viewed checkmark", async () => {
-    const files = [
-      makeFile({ path: "src/main.py" }),
-      makeFile({ path: "src/utils.py" }),
-    ];
-    const viewed = new Set(["src/main.py"]);
-    const { captureCharFrame, renderOnce } = await testRender(
-      createElement(FileList, {
-        files,
-        selectedIndex: 1,
-        comments: [],
-        viewedFiles: viewed,
-      }),
-      RENDER_OPTS,
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    const mainLine = frame
-      .split("\n")
-      .find((l: string) => l.includes("src/main.py"));
-    expect(mainLine).toContain("\u2713");
-  });
-
-  it("handles single file", async () => {
-    const files = [makeFile({ path: "only-file.ts" })];
-    const { captureCharFrame, renderOnce } = await testRender(
-      createElement(FileList, {
-        files,
-        selectedIndex: 0,
-        comments: [],
-        viewedFiles: new Set<string>(),
-      }),
-      RENDER_OPTS,
-    );
-    await renderOnce();
-    const frame = captureCharFrame();
-    expect(frame).toContain("only-file.ts");
-    expect(frame).toContain(">");
   });
 });
 
