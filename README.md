@@ -58,6 +58,39 @@ orbit feature main        # branch comparison
 orbit --split             # side-by-side view
 ```
 
+## Lazygit integration
+
+Add the following to your lazygit config (`~/.config/lazygit/config.yml`) to launch orbit directly from lazygit with a single key:
+
+```yaml
+customCommands:
+  - key: "o"
+    description: "Review uncommitted changes"
+    command: "orbit ."
+    context: "files"
+    output: terminal
+  - key: "o"
+    description: "Review branch diff"
+    command: "orbit {{.SelectedLocalBranch.Name}} {{.CheckedOutBranch.Name}}"
+    context: "localBranches"
+    output: terminal
+  - key: "o"
+    description: "Review commit(s)"
+    command: "orbit {{.SelectedCommitRange.From}}~1..{{.SelectedCommitRange.To}}"
+    context: "commits"
+    output: terminal
+```
+
+Press `o` in any of these panels to open orbit:
+
+| Panel    | What it reviews                                    |
+| -------- | -------------------------------------------------- |
+| Files    | Unstaged changes                                   |
+| Branches | Diff between selected branch and current branch    |
+| Commits  | Selected commit, or range if multiple are selected |
+
+For commit ranges, select multiple commits with `v` (visual mode) or `shift+up/down` in lazygit, then press `o`. The `~1` in the command ensures the first selected commit is included in the diff.
+
 ## Keybindings
 
 ### File list
