@@ -37,9 +37,14 @@ export function HomeScreen({
   const { width, height } = useTerminalDimensions();
   const panelHeight = height - 2; // header + help bar
 
-  const treeWidth = Math.max(Math.floor(width * treePercent), 20);
   const dividerWidth = 1;
-  const previewWidth = width - treeWidth - dividerWidth;
+  const availableWidth = width - dividerWidth;
+  const clampedPct = Math.max(
+    MIN_TREE_PCT,
+    Math.min(MAX_TREE_PCT, treePercent),
+  );
+  const treeWidth = Math.max(Math.floor(availableWidth * clampedPct), 20);
+  const previewWidth = availableWidth - treeWidth;
 
   // Keep last previewed file when cursor is on a directory
   const lastFileRef = useRef<DiffFile | null>(null);
@@ -48,13 +53,23 @@ export function HomeScreen({
   if (selectedFile) lastFileRef.current = selectedFile;
   const previewFile = selectedFile ?? lastFileRef.current;
 
+  // Track whether the drag started near the divider
+  const draggingDividerRef = useRef(false);
+
   return (
     <box
       flexDirection="row"
       flexGrow={1}
+      onMouseDown={(event: any) => {
+        draggingDividerRef.current = Math.abs(event.x - treeWidth) <= 2;
+      }}
       onMouseDrag={(event: any) => {
-        const pct = event.x / width;
+        if (!draggingDividerRef.current) return;
+        const pct = event.x / availableWidth;
         onTreeResize(Math.max(MIN_TREE_PCT, Math.min(MAX_TREE_PCT, pct)));
+      }}
+      onMouseUp={() => {
+        draggingDividerRef.current = false;
       }}
     >
       <FileTree

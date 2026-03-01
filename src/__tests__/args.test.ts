@@ -125,19 +125,29 @@ describe("parseArgs", () => {
 describe("buildDiffArgs", () => {
   it("staged", () => {
     expect(
-      buildDiffArgs({ base: "--staged", target: "", splitMode: false, root: false }),
+      buildDiffArgs({
+        base: "--staged",
+        target: "",
+        splitMode: false,
+        root: false,
+      }),
     ).toEqual(["diff", "--staged"]);
   });
 
   it("unstaged", () => {
-    expect(buildDiffArgs({ base: "", target: "", splitMode: false, root: false })).toEqual([
-      "diff",
-    ]);
+    expect(
+      buildDiffArgs({ base: "", target: "", splitMode: false, root: false }),
+    ).toEqual(["diff"]);
   });
 
   it("range", () => {
     expect(
-      buildDiffArgs({ base: "HEAD~1", target: "HEAD", splitMode: false, root: false }),
+      buildDiffArgs({
+        base: "HEAD~1",
+        target: "HEAD",
+        splitMode: false,
+        root: false,
+      }),
     ).toEqual(["diff", "HEAD~1..HEAD"]);
   });
 });
@@ -145,19 +155,29 @@ describe("buildDiffArgs", () => {
 describe("formatDiffRange", () => {
   it("staged", () => {
     expect(
-      formatDiffRange({ base: "--staged", target: "", splitMode: false, root: false }),
+      formatDiffRange({
+        base: "--staged",
+        target: "",
+        splitMode: false,
+        root: false,
+      }),
     ).toBe("staged changes");
   });
 
   it("unstaged", () => {
-    expect(formatDiffRange({ base: "", target: "", splitMode: false, root: false })).toBe(
-      "unstaged changes",
-    );
+    expect(
+      formatDiffRange({ base: "", target: "", splitMode: false, root: false }),
+    ).toBe("unstaged changes");
   });
 
   it("range", () => {
     expect(
-      formatDiffRange({ base: "HEAD~1", target: "HEAD", splitMode: false, root: false }),
+      formatDiffRange({
+        base: "HEAD~1",
+        target: "HEAD",
+        splitMode: false,
+        root: false,
+      }),
     ).toBe("HEAD~1..HEAD");
   });
 });
