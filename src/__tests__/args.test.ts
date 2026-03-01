@@ -9,6 +9,7 @@ describe("parseArgs", () => {
       base: "",
       target: "",
       splitMode: false,
+      root: false,
     });
   });
 
@@ -17,14 +18,16 @@ describe("parseArgs", () => {
       base: "",
       target: "",
       splitMode: false,
+      root: false,
     });
   });
 
-  it('"staged" → staged changes', () => {
-    expect(parseArgs(argv(["staged"]))).toEqual({
+  it('"--staged" → staged changes', () => {
+    expect(parseArgs(argv(["--staged"]))).toEqual({
       base: "--staged",
       target: "",
       splitMode: false,
+      root: false,
     });
   });
 
@@ -33,6 +36,7 @@ describe("parseArgs", () => {
       base: "HEAD~1",
       target: "HEAD",
       splitMode: false,
+      root: false,
     });
   });
 
@@ -41,6 +45,7 @@ describe("parseArgs", () => {
       base: "HEAD~3",
       target: "HEAD",
       splitMode: false,
+      root: false,
     });
   });
 
@@ -49,6 +54,7 @@ describe("parseArgs", () => {
       base: "main",
       target: "feature",
       splitMode: false,
+      root: false,
     });
   });
 
@@ -57,6 +63,7 @@ describe("parseArgs", () => {
       base: "abc123",
       target: "HEAD",
       splitMode: false,
+      root: false,
     });
   });
 
@@ -65,6 +72,7 @@ describe("parseArgs", () => {
       base: "main",
       target: "feature",
       splitMode: false,
+      root: false,
     });
   });
 
@@ -73,6 +81,7 @@ describe("parseArgs", () => {
       base: "HEAD~1",
       target: "HEAD",
       splitMode: true,
+      root: false,
     });
   });
 
@@ -81,6 +90,25 @@ describe("parseArgs", () => {
       base: "",
       target: "",
       splitMode: true,
+      root: false,
+    });
+  });
+
+  it("--root flag", () => {
+    expect(parseArgs(argv(["--root", "HEAD~3..HEAD"]))).toEqual({
+      base: "HEAD~3",
+      target: "HEAD",
+      splitMode: false,
+      root: true,
+    });
+  });
+
+  it("--staged takes precedence over positional args", () => {
+    expect(parseArgs(argv(["--staged", "HEAD"]))).toEqual({
+      base: "--staged",
+      target: "",
+      splitMode: false,
+      root: false,
     });
   });
 
@@ -89,6 +117,7 @@ describe("parseArgs", () => {
       base: "HEAD~1",
       target: "HEAD",
       splitMode: false,
+      root: false,
     });
   });
 });
@@ -96,19 +125,19 @@ describe("parseArgs", () => {
 describe("buildDiffArgs", () => {
   it("staged", () => {
     expect(
-      buildDiffArgs({ base: "--staged", target: "", splitMode: false }),
+      buildDiffArgs({ base: "--staged", target: "", splitMode: false, root: false }),
     ).toEqual(["diff", "--staged"]);
   });
 
   it("unstaged", () => {
-    expect(buildDiffArgs({ base: "", target: "", splitMode: false })).toEqual([
+    expect(buildDiffArgs({ base: "", target: "", splitMode: false, root: false })).toEqual([
       "diff",
     ]);
   });
 
   it("range", () => {
     expect(
-      buildDiffArgs({ base: "HEAD~1", target: "HEAD", splitMode: false }),
+      buildDiffArgs({ base: "HEAD~1", target: "HEAD", splitMode: false, root: false }),
     ).toEqual(["diff", "HEAD~1..HEAD"]);
   });
 });
@@ -116,19 +145,19 @@ describe("buildDiffArgs", () => {
 describe("formatDiffRange", () => {
   it("staged", () => {
     expect(
-      formatDiffRange({ base: "--staged", target: "", splitMode: false }),
+      formatDiffRange({ base: "--staged", target: "", splitMode: false, root: false }),
     ).toBe("staged changes");
   });
 
   it("unstaged", () => {
-    expect(formatDiffRange({ base: "", target: "", splitMode: false })).toBe(
+    expect(formatDiffRange({ base: "", target: "", splitMode: false, root: false })).toBe(
       "unstaged changes",
     );
   });
 
   it("range", () => {
     expect(
-      formatDiffRange({ base: "HEAD~1", target: "HEAD", splitMode: false }),
+      formatDiffRange({ base: "HEAD~1", target: "HEAD", splitMode: false, root: false }),
     ).toBe("HEAD~1..HEAD");
   });
 });

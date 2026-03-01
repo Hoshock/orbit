@@ -13,6 +13,20 @@ Built with OpenTUI + React + Bun.
 - `bun run check` - Lint + build check (no auto-fix)
 - `bun run register` - Install `orbit` command globally via symlink
 
+## CLI Arguments
+
+```
+orbit                     # unstaged changes (git diff)
+orbit --staged            # staged changes (git diff --staged)
+orbit HEAD                # last commit (HEAD~1..HEAD)
+orbit HEAD~3..HEAD        # commit range
+orbit feature main        # branch comparison
+orbit --root A~1..B       # falls back to empty tree if base is unresolvable
+orbit --split             # side-by-side view
+```
+
+Flags: `--staged`, `--root`, `--split` / `--mode=split`, `-h` / `--help`
+
 ## Architecture
 
 - Entry: `src/index.tsx` → CLI parse → renderer → `<App />`

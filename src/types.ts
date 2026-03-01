@@ -41,6 +41,7 @@ export interface CliOptions {
   base: string;
   target: string;
   splitMode: boolean;
+  root: boolean;
   /** Short hash for old (base) side, resolved at startup */
   oldHash?: string;
   /** Short hash for new (target) side, resolved at startup */

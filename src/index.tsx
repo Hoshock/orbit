@@ -16,7 +16,12 @@ import { buildDiffArgs, parseArgs } from "./cli/args.ts";
 import { getCachePath, loadComments } from "./data/comment-cache.ts";
 import { commentStore } from "./data/comment-store.ts";
 import { parseDiffFiles } from "./data/diff-parser.ts";
-import { getRepoRoot, resolveShortHash } from "./utils/git.ts";
+import {
+  getEmptyTreeHash,
+  getRepoRoot,
+  refExists,
+  resolveShortHash,
+} from "./utils/git.ts";
 
 const __dir = dirname(new URL(import.meta.url).pathname);
 addDefaultParsers([
@@ -39,12 +44,14 @@ const HELP = `orbit - Offline Review Board In Terminal
 Usage:
   orbit                   unstaged changes (git diff)
   orbit .                 same as above
-  orbit staged            staged changes (git diff --staged)
+  orbit --staged          staged changes (git diff --staged)
   orbit HEAD              last commit (HEAD~1..HEAD)
   orbit HEAD~3..HEAD      commit range
   orbit feature main      branch comparison
 
 Options:
+  --staged                staged changes
+  --root                  diff against empty tree if base ref is unresolvable
   --split, --mode=split   split view (default: unified)
   -h, --help              show this help
 
@@ -81,6 +88,13 @@ async function main() {
   } catch {
     console.error("Error: Not a git repository");
     process.exit(1);
+  }
+
+  // --root: fall back to empty tree if base ref doesn't exist (root commit)
+  if (options.root && options.base && options.base !== "--staged") {
+    if (!refExists(options.base, repoRoot)) {
+      options.base = getEmptyTreeHash(repoRoot);
+    }
   }
 
   const diffArgs = buildDiffArgs(options);
