@@ -29,6 +29,7 @@ import {
   displayRangeToSourceRangeSplit,
   getDisplayLineCount,
   getLineFromDiff,
+  markerLinesUnifiedToSplit,
   sourceLineToDisplayLine,
   sourceLineToDisplayLineSplit,
 } from "./data/diff-parser.ts";
@@ -172,6 +173,11 @@ export function App({
     return collapseDiff(currentFile.rawDiff, exp, markerWidth);
   }, [currentFile, expandedFolds, markerWidth]);
   const activeDiff = visibleDiff?.diff ?? currentFile?.rawDiff ?? "";
+  const markerLinesForView = useMemo(() => {
+    if (!visibleDiff) return undefined;
+    if (!splitMode) return visibleDiff.markerLines;
+    return markerLinesUnifiedToSplit(activeDiff, visibleDiff.markerLines);
+  }, [visibleDiff, splitMode, activeDiff]);
 
   const pendingRangeRef = useRef<{ start: number; end: number } | null>(null);
 
@@ -440,13 +446,13 @@ export function App({
           return;
         case "c": {
           // Block commenting on fold marker lines
-          if (visibleDiff?.markerLines.has(cursorLine)) {
+          if (markerLinesForView?.has(cursorLine)) {
             showFlash("Cannot comment on fold marker");
             return;
           }
           if (selectionRange) {
             for (let l = selectionRange.start; l <= selectionRange.end; l++) {
-              if (visibleDiff?.markerLines.has(l)) {
+              if (markerLinesForView?.has(l)) {
                 showFlash("Selection includes fold marker");
                 return;
               }
@@ -486,7 +492,7 @@ export function App({
           let targetFoldId: number;
           let action: "expand" | "collapse";
 
-          const markerFoldId = visibleDiff.markerLines.get(cursorLine);
+          const markerFoldId = markerLinesForView?.get(cursorLine);
           if (markerFoldId !== undefined) {
             targetFoldId = markerFoldId;
             action = "expand";
@@ -539,7 +545,10 @@ export function App({
           let newCursor = 1;
           if (action === "collapse") {
             // After collapse: position cursor on the fold marker
-            for (const [dispLine, fId] of newResult.markerLines) {
+            const nextMarkerLines = splitMode
+              ? markerLinesUnifiedToSplit(newResult.diff, newResult.markerLines)
+              : newResult.markerLines;
+            for (const [dispLine, fId] of nextMarkerLines) {
               if (fId === targetFoldId) {
                 newCursor = dispLine;
                 break;
@@ -901,7 +910,7 @@ export function App({
           splitMode={splitMode}
           activeSide={activeSide}
           selectionRange={selectionRange}
-          markerLines={visibleDiff?.markerLines}
+          markerLines={markerLinesForView}
           maxHeight={
             mode === "comment-input"
               ? Math.max(Math.floor((height - 2) * 0.5), 6)

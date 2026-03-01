@@ -529,6 +529,34 @@ export function sourceLineToDisplayLineSplit(
   return null;
 }
 
+/**
+ * Convert unified-view marker display lines to split-view display lines.
+ * Fold markers are context lines, so they can be remapped via source lines.
+ */
+export function markerLinesUnifiedToSplit(
+  rawDiff: string,
+  markerLines: Map<number, number>,
+): Map<number, number> {
+  const splitMarkerLines = new Map<number, number>();
+
+  for (const [unifiedDisplayLine, foldId] of markerLines) {
+    const src = displayLineToSourceLine(rawDiff, unifiedDisplayLine);
+    const splitDisplayLine =
+      (src.newLine !== null
+        ? sourceLineToDisplayLineSplit(rawDiff, src.newLine, "new")
+        : null) ??
+      (src.oldLine !== null
+        ? sourceLineToDisplayLineSplit(rawDiff, src.oldLine, "old")
+        : null);
+
+    if (splitDisplayLine !== null) {
+      splitMarkerLines.set(splitDisplayLine, foldId);
+    }
+  }
+
+  return splitMarkerLines;
+}
+
 /** Convert a split display range to source range for a specific side. */
 export function displayRangeToSourceRangeSplit(
   rawDiff: string,

@@ -4,6 +4,7 @@ import {
   FOLD_CHUNK_SIZE,
   FOLD_MARKER_PATTERN,
 } from "../data/diff-collapse.ts";
+import { getDisplayLineCount } from "../data/diff-parser.ts";
 
 const HEADER = [
   "diff --git a/file.ts b/file.ts",
@@ -441,5 +442,152 @@ describe("incremental unfold", () => {
   it("FOLD_CHUNK_SIZE is exported and positive", () => {
     expect(FOLD_CHUNK_SIZE).toBeGreaterThan(0);
     expect(typeof FOLD_CHUNK_SIZE).toBe("number");
+  });
+});
+
+describe("markerLines cross-check with countUnifiedLines", () => {
+  /** Count unified display lines and find which ones contain FOLD_MARKER_PATTERN */
+  function findMarkerPositions(diffStr: string): Map<number, string> {
+    const lines = diffStr.split("\n");
+    const result = new Map<number, string>();
+    let displayLine = 0;
+    let inHunk = false;
+    for (const line of lines) {
+      if (line.startsWith("@@")) {
+        inHunk = true;
+        continue;
+      }
+      if (!inHunk || line.length === 0) continue;
+      const ch = line[0];
+      if (ch === "+" || ch === "-" || ch === " ") {
+        displayLine++;
+        if (line.includes(FOLD_MARKER_PATTERN)) {
+          result.set(displayLine, line);
+        }
+      } else if (ch === "\\") {
+        // skip
+      } else {
+        inHunk = false;
+      }
+    }
+    return result;
+  }
+
+  it("marker display lines match positions found by scanning the diff string (single fold)", () => {
+    const hunk =
+      `@@ -1,18 +1,18 @@\n` +
+      `${ctxLines(1, 3)}\n` +
+      `-old1\n+new1\n` +
+      `${ctxLines(5, 10)}\n` +
+      `-old2\n+new2\n` +
+      `${ctxLines(16, 3)}`;
+    const diff = makeDiff(hunk);
+    const result = collapseDiff(diff, new Map());
+
+    // Cross-check: scan the collapsed diff string for markers
+    const foundMarkers = findMarkerPositions(result.diff);
+
+    // Same number of markers
+    expect(result.markerLines.size).toBe(foundMarkers.size);
+
+    // Same display line positions
+    for (const [dispLine] of result.markerLines) {
+      expect(foundMarkers.has(dispLine)).toBe(true);
+    }
+  });
+
+  it("marker display lines match for multiple folds", () => {
+    const hunk =
+      `@@ -1,30 +1,30 @@\n` +
+      `-old1\n+new1\n` +
+      `${ctxLines(2, 10)}\n` +
+      `-old2\n+new2\n` +
+      `${ctxLines(13, 10)}\n` +
+      `-old3\n+new3\n` +
+      `${ctxLines(24, 4)}`;
+    const diff = makeDiff(hunk);
+    const result = collapseDiff(diff, new Map());
+
+    const foundMarkers = findMarkerPositions(result.diff);
+
+    expect(result.markerLines.size).toBe(foundMarkers.size);
+    for (const [dispLine] of result.markerLines) {
+      expect(foundMarkers.has(dispLine)).toBe(true);
+    }
+  });
+
+  it("marker display lines match after partial expansion", () => {
+    const hunk =
+      `@@ -1,30 +1,30 @@\n` +
+      `-old1\n+new1\n` +
+      `${ctxLines(2, 20)}\n` +
+      `-old2\n+new2\n` +
+      `${ctxLines(23, 4)}`;
+    const diff = makeDiff(hunk);
+    const result = collapseDiff(diff, new Map([[0, 5]]));
+
+    const foundMarkers = findMarkerPositions(result.diff);
+
+    expect(result.markerLines.size).toBe(foundMarkers.size);
+    for (const [dispLine] of result.markerLines) {
+      expect(foundMarkers.has(dispLine)).toBe(true);
+    }
+  });
+
+  it("total line count is consistent between markerLines and getDisplayLineCount", () => {
+    const hunk =
+      `@@ -1,30 +1,30 @@\n` +
+      `-old1\n+new1\n` +
+      `${ctxLines(2, 10)}\n` +
+      `-old2\n+new2\n` +
+      `${ctxLines(13, 10)}\n` +
+      `-old3\n+new3\n` +
+      `${ctxLines(24, 4)}`;
+    const diff = makeDiff(hunk);
+    const result = collapseDiff(diff, new Map());
+
+    const totalLines = getDisplayLineCount(result.diff, false);
+
+    // All marker lines should be within valid range
+    for (const [dispLine] of result.markerLines) {
+      expect(dispLine).toBeGreaterThan(0);
+      expect(dispLine).toBeLessThanOrEqual(totalLines);
+    }
+  });
+
+  it("marker display lines match with leading fold zone", () => {
+    // 10 ctx + change + 3 ctx
+    const hunk =
+      `@@ -1,14 +1,14 @@\n` +
+      `${ctxLines(1, 10)}\n` +
+      `-old1\n+new1\n` +
+      `${ctxLines(12, 3)}`;
+    const diff = makeDiff(hunk);
+    const result = collapseDiff(diff, new Map());
+
+    const foundMarkers = findMarkerPositions(result.diff);
+
+    expect(result.markerLines.size).toBe(foundMarkers.size);
+    for (const [dispLine] of result.markerLines) {
+      expect(foundMarkers.has(dispLine)).toBe(true);
+    }
+  });
+
+  it("marker display lines match with trailing fold zone", () => {
+    // 3 ctx + change + 10 ctx
+    const hunk =
+      `@@ -1,14 +1,14 @@\n` +
+      `${ctxLines(1, 3)}\n` +
+      `-old1\n+new1\n` +
+      `${ctxLines(5, 10)}`;
+    const diff = makeDiff(hunk);
+    const result = collapseDiff(diff, new Map());
+
+    const foundMarkers = findMarkerPositions(result.diff);
+
+    expect(result.markerLines.size).toBe(foundMarkers.size);
+    for (const [dispLine] of result.markerLines) {
+      expect(foundMarkers.has(dispLine)).toBe(true);
+    }
   });
 });
