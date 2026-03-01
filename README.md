@@ -6,6 +6,8 @@
 
 A terminal-based code review tool. Browse git diffs, leave comments on specific lines, then export everything as a prompt you can paste into Claude Code or any other AI tool.
 
+![Demo](docs/demo.gif)
+
 ## Why
 
 Inspired by [difit](https://github.com/yoshiko-pg/difit), a great browser-based local diff viewer. Commenting on lines works in the browser, but not yet in the TUI. I wanted a fully terminal-native diff reviewer with line-level comments, a customizable syntax highlighting theme, split view, and a prompt export workflow for AI coding assistants -- so I built orbit.
