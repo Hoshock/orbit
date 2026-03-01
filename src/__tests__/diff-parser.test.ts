@@ -1,11 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import { collapseDiff } from "../data/diff-collapse.ts";
 import {
+  buildSplitDisplayLineTypeMap,
   displayLineToSourceLine,
   displayLineToSourceLineSplit,
   displayRangeToSourceRange,
   displayRangeToSourceRangeSplit,
   findNearestFoldIdByDisplayLine,
+  findNextDisplayLineForSideSplit,
   getDiffLineType,
   getDisplayLineCount,
   getLineFromDiff,
@@ -558,6 +560,30 @@ describe("sourceLineToDisplayLineSplit", () => {
     // Context: old=10 and new=10 both at row 1
     expect(sourceLineToDisplayLineSplit(SAMPLE_DIFF, 10, "old")).toBe(1);
     expect(sourceLineToDisplayLineSplit(SAMPLE_DIFF, 10, "new")).toBe(1);
+  });
+});
+
+describe("findNextDisplayLineForSideSplit", () => {
+  it("skips padded rows when moving down on new side", () => {
+    // From row2 (old-only padded for new) move down to next row that has new.
+    expect(findNextDisplayLineForSideSplit(SAMPLE_DIFF, 2, "new", 1)).toBe(3);
+  });
+
+  it("skips padded rows when moving up on old side", () => {
+    // From row3 (new-only padded for old) move up to nearest row with old.
+    expect(findNextDisplayLineForSideSplit(SAMPLE_DIFF, 3, "old", -1)).toBe(2);
+  });
+
+  it("returns current row when no further row exists on that side", () => {
+    // Row5 is the last old-side row in this sample.
+    expect(findNextDisplayLineForSideSplit(SAMPLE_DIFF, 5, "old", 1)).toBe(5);
+  });
+
+  it("uses prebuilt split row types when provided", () => {
+    const rows = buildSplitDisplayLineTypeMap(SAMPLE_DIFF);
+    expect(
+      findNextDisplayLineForSideSplit(SAMPLE_DIFF, 2, "new", 1, rows),
+    ).toBe(3);
   });
 });
 

@@ -529,6 +529,92 @@ export function sourceLineToDisplayLineSplit(
   return null;
 }
 
+export interface SplitDisplayLineType {
+  old: "-" | " " | null;
+  new: "+" | " " | null;
+}
+
+/** Build per-row side/type info for split display (1-indexed, index 0 unused). */
+export function buildSplitDisplayLineTypeMap(
+  rawDiff: string,
+): SplitDisplayLineType[] {
+  const rows: SplitDisplayLineType[] = [{ old: null, new: null }];
+  const lines = rawDiff.split("\n");
+  let inHunk = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      i++;
+      continue;
+    }
+    if (!inHunk || line.length === 0) {
+      i++;
+      continue;
+    }
+    const ch = line[0];
+    if (ch === " ") {
+      rows.push({ old: " ", new: " " });
+      i++;
+      continue;
+    }
+    if (ch === "-" || ch === "+") {
+      let removals = 0;
+      let additions = 0;
+      while (i < lines.length && lines[i]!.length > 0 && lines[i]![0] === "-") {
+        removals++;
+        i++;
+      }
+      while (i < lines.length && lines[i]!.length > 0 && lines[i]![0] === "+") {
+        additions++;
+        i++;
+      }
+      const count = Math.max(removals, additions);
+      for (let r = 0; r < count; r++) {
+        rows.push({
+          old: r < removals ? "-" : null,
+          new: r < additions ? "+" : null,
+        });
+      }
+      continue;
+    }
+    if (ch === "\\") {
+      i++;
+      continue;
+    }
+    inHunk = false;
+    i++;
+  }
+
+  return rows;
+}
+
+/**
+ * In split view, find the next display row in `delta` direction that has
+ * a real source line on the requested side. Returns current row when none.
+ */
+export function findNextDisplayLineForSideSplit(
+  rawDiff: string,
+  currentDisplayLine: number,
+  side: "old" | "new",
+  delta: 1 | -1,
+  rows?: SplitDisplayLineType[],
+): number {
+  const types = rows ?? buildSplitDisplayLineTypeMap(rawDiff);
+  const maxLine = types.length - 1;
+  let next = Math.max(1, Math.min(maxLine, currentDisplayLine + delta));
+  while (next >= 1 && next <= maxLine) {
+    const row = types[next];
+    if (!row) return currentDisplayLine;
+    const hasSource = side === "new" ? row.new !== null : row.old !== null;
+    if (hasSource) return next;
+    next += delta;
+  }
+  return currentDisplayLine;
+}
+
 /**
  * Convert unified-view marker display lines to split-view display lines.
  * Fold markers are context lines, so they can be remapped via source lines.

@@ -2,14 +2,17 @@ import {
   type DiffRenderable,
   getTreeSitterClient,
   type MouseEvent,
+  type RGBA,
   type ScrollBoxRenderable,
 } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { COLORS } from "../constants.ts";
 import {
+  buildSplitDisplayLineTypeMap,
   displayLineToSourceLine,
   displayLineToSourceLineSplit,
+  getDiffLineType,
   getDisplayLineCount,
   sourceLineToDisplayLine,
   sourceLineToDisplayLineSplit,
@@ -27,13 +30,18 @@ interface DiffViewProps {
   selectionRange?: { start: number; end: number } | null;
   markerLines?: Map<number, number>;
   maxHeight?: number;
-  onCursorChange?: (line: number) => void;
+  onCursorChange?: (line: number, side?: "old" | "new") => void;
 }
 
 type LineColorTarget = {
-  setLineColor: (line: number, color: string) => void;
+  setLineColor: (line: number, color: LineColor) => void;
   clearLineColor: (line: number) => void;
 };
+
+type LineColor =
+  | string
+  | RGBA
+  | { gutter?: string | RGBA; content?: string | RGBA };
 
 type DiffRuntime = DiffRenderable & {
   buildView?: () => void;
@@ -87,6 +95,10 @@ export function DiffView({
 
   const totalLines = useMemo(
     () => getDisplayLineCount(file.rawDiff, splitMode),
+    [file.rawDiff, splitMode],
+  );
+  const splitDisplayLineTypes = useMemo(
+    () => (splitMode ? buildSplitDisplayLineTypeMap(file.rawDiff) : null),
     [file.rawDiff, splitMode],
   );
 
@@ -224,6 +236,41 @@ export function DiffView({
         : side === "old"
           ? diff.leftSide
           : diff.rightSide;
+    const getNativeLineColor = (
+      side: "unified" | "old" | "new",
+      displayLine: number,
+    ) => {
+      if (displayLine <= 0) return null;
+      const toColor = (t: "+" | "-" | " " | null): LineColor | null => {
+        if (t === "+") {
+          return {
+            gutter: diff.addedLineNumberBg,
+            content: diff.addedContentBg ?? diff.addedBg,
+          };
+        }
+        if (t === "-") {
+          return {
+            gutter: diff.removedLineNumberBg,
+            content: diff.removedContentBg ?? diff.removedBg,
+          };
+        }
+        if (t === " ") {
+          return {
+            gutter: diff.lineNumberBg,
+            content: diff.contextContentBg ?? diff.contextBg,
+          };
+        }
+        return null;
+      };
+
+      if (!splitMode || side === "unified") {
+        return toColor(getDiffLineType(file.rawDiff, displayLine));
+      }
+      const row = splitDisplayLineTypes?.[displayLine];
+      if (!row) return null;
+      if (side === "old") return toColor(row.old);
+      return toColor(row.new);
+    };
     const restoreBaseRange = (
       side: "unified" | "old" | "new",
       start: number,
@@ -237,7 +284,11 @@ export function DiffView({
         if (l <= 0) continue;
         const baseColor = baseMap.get(l);
         if (baseColor) target.setLineColor(l - 1, baseColor);
-        else target.clearLineColor(l - 1);
+        else {
+          const nativeColor = getNativeLineColor(side, l);
+          if (nativeColor) target.setLineColor(l - 1, nativeColor);
+          else target.clearLineColor(l - 1);
+        }
       }
     };
 
@@ -270,7 +321,7 @@ export function DiffView({
         top = row - diffHeight + 1;
       }
       top = Math.min(top, maxScrollTop);
-      sb.scrollTop = top;
+      if (sb.scrollTop !== top) sb.scrollTop = top;
       scrollTopRef.current = top;
     }
   }, [
@@ -281,20 +332,25 @@ export function DiffView({
     splitMode,
     activeSide,
     overlayRevision,
+    file.rawDiff,
+    splitDisplayLineTypes,
   ]);
+
+  const handleMouseDown = (event: MouseEvent) => {
+    if (!onCursorChange) return;
+    const line = scrollTopRef.current + event.y + 1;
+    if (splitMode) {
+      const clickedSide: "old" | "new" =
+        event.x < Math.floor(width / 2) ? "old" : "new";
+      onCursorChange(Math.max(1, line), clickedSide);
+      return;
+    }
+    onCursorChange(Math.max(1, line));
+  };
 
   return (
     <box flexDirection="column" height={availableHeight}>
-      <scrollbox
-        ref={scrollRef}
-        height={diffHeight}
-        width={width}
-        onMouseDown={(event: MouseEvent) => {
-          if (!onCursorChange) return;
-          const line = scrollTopRef.current + event.y + 1;
-          onCursorChange(Math.max(1, line));
-        }}
-      >
+      <scrollbox ref={scrollRef} height={diffHeight} width={width}>
         <diff
           ref={diffRef}
           diff={file.rawDiff}
@@ -304,6 +360,10 @@ export function DiffView({
           syntaxStyle={syntaxStyle}
           filetype={getFiletype(file.path)}
           treeSitterClient={treeSitterClient}
+          onMouseDown={(event: MouseEvent) => {
+            handleMouseDown(event);
+            event.stopPropagation();
+          }}
         />
       </scrollbox>
       {currentComments.length > 0 ? (
