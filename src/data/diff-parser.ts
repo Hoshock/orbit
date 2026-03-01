@@ -557,6 +557,52 @@ export function markerLinesUnifiedToSplit(
   return splitMarkerLines;
 }
 
+export interface FoldLike {
+  id: number;
+  newLineStart: number;
+  newLineEnd: number;
+}
+
+/**
+ * Find the nearest fold to the cursor by comparing display-row distance.
+ * Fold boundaries are tracked on the new side, then projected to the current view.
+ */
+export function findNearestFoldIdByDisplayLine(
+  rawDiff: string,
+  folds: FoldLike[],
+  cursorDisplayLine: number,
+  splitMode = false,
+): number | null {
+  let bestFoldId: number | null = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+
+  for (const fold of folds) {
+    const startDisplay = splitMode
+      ? sourceLineToDisplayLineSplit(rawDiff, fold.newLineStart, "new")
+      : sourceLineToDisplayLine(rawDiff, fold.newLineStart, "new");
+    const endDisplay = splitMode
+      ? sourceLineToDisplayLineSplit(rawDiff, fold.newLineEnd, "new")
+      : sourceLineToDisplayLine(rawDiff, fold.newLineEnd, "new");
+
+    const distStart =
+      startDisplay === null
+        ? Number.POSITIVE_INFINITY
+        : Math.abs(cursorDisplayLine - startDisplay);
+    const distEnd =
+      endDisplay === null
+        ? Number.POSITIVE_INFINITY
+        : Math.abs(cursorDisplayLine - endDisplay);
+    const dist = Math.min(distStart, distEnd);
+
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestFoldId = fold.id;
+    }
+  }
+
+  return bestFoldId;
+}
+
 /** Convert a split display range to source range for a specific side. */
 export function displayRangeToSourceRangeSplit(
   rawDiff: string,

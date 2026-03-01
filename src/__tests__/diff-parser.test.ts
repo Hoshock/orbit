@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
+import { collapseDiff } from "../data/diff-collapse.ts";
 import {
   displayLineToSourceLine,
   displayLineToSourceLineSplit,
   displayRangeToSourceRange,
   displayRangeToSourceRangeSplit,
+  findNearestFoldIdByDisplayLine,
   getDiffLineType,
   getDisplayLineCount,
   getLineFromDiff,
@@ -12,7 +14,6 @@ import {
   parseNumstat,
   sourceLineToDisplayLineSplit,
 } from "../data/diff-parser.ts";
-import { collapseDiff } from "../data/diff-collapse.ts";
 
 const SAMPLE_DIFF = `diff --git a/src/main.py b/src/main.py
 index abc1234..def5678 100644
@@ -607,7 +608,10 @@ index 111..222 100644
     let expectedSplitLine: number | null = null;
     for (let d = 1; d <= splitMax; d++) {
       const splitSrc = displayLineToSourceLineSplit(collapsed.diff, d);
-      if (splitSrc.oldLine === src.oldLine && splitSrc.newLine === src.newLine) {
+      if (
+        splitSrc.oldLine === src.oldLine &&
+        splitSrc.newLine === src.newLine
+      ) {
         expectedSplitLine = d;
         break;
       }
@@ -615,6 +619,127 @@ index 111..222 100644
 
     expect(expectedSplitLine).not.toBeNull();
     expect(splitMarkers.get(expectedSplitLine!)).toBe(foldId);
+  });
+});
+
+describe("findNearestFoldIdByDisplayLine", () => {
+  it("returns the marker's fold id when cursor is on a split marker row", () => {
+    const diff = `diff --git a/f b/f
+index 111..222 100644
+--- a/f
++++ b/f
+@@ -1,30 +1,30 @@
+-old1
++new1
+ line2
+ line3
+ line4
+ line5
+ line6
+ line7
+ line8
+ line9
+ line10
+ line11
+ line12
+ line13
+-old14
++new14
+ line15
+ line16
+ line17
+ line18
+ line19
+ line20
+ line21
+ line22
+ line23
+ line24
+ line25
+ line26
+-old27
++new27
+ line28
+`;
+
+    const collapsed = collapseDiff(diff, new Map(), 80);
+    const splitMarkers = markerLinesUnifiedToSplit(
+      collapsed.diff,
+      collapsed.markerLines,
+    );
+
+    for (const [splitLine, foldId] of splitMarkers) {
+      const nearest = findNearestFoldIdByDisplayLine(
+        collapsed.diff,
+        collapsed.folds,
+        splitLine,
+        true,
+      );
+      expect(nearest).toBe(foldId);
+    }
+  });
+
+  it("selects the nearest fold even when cursor row has no new-side line", () => {
+    const diff = `diff --git a/f b/f
+index 111..222 100644
+--- a/f
++++ b/f
+@@ -1,36 +1,34 @@
+-old1
+-old2
+ line3
+ line4
+ line5
+ line6
+ line7
+ line8
+ line9
+ line10
+ line11
+ line12
+ line13
+ line14
+-old15
++new15
+ line16
+ line17
+ line18
+ line19
+ line20
+ line21
+ line22
+ line23
+ line24
+ line25
+ line26
+ line27
+ line28
+-old29
++new29
+ line30
+`;
+
+    const collapsed = collapseDiff(diff, new Map(), 80);
+    expect(collapsed.folds).toHaveLength(2);
+
+    const splitMax = getDisplayLineCount(collapsed.diff, true);
+    let oldOnlyCursor: number | null = null;
+    for (let d = 1; d <= splitMax; d++) {
+      const src = displayLineToSourceLineSplit(collapsed.diff, d);
+      if (src.oldLine !== null && src.newLine === null) {
+        oldOnlyCursor = d;
+        break;
+      }
+    }
+
+    expect(oldOnlyCursor).not.toBeNull();
+    const nearest = findNearestFoldIdByDisplayLine(
+      collapsed.diff,
+      collapsed.folds,
+      oldOnlyCursor!,
+      true,
+    );
+    expect(nearest).toBe(0);
   });
 });
 

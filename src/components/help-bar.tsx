@@ -22,12 +22,12 @@ export function HelpBar({ mode, flash, splitMode }: HelpBarProps) {
   let helpText: string;
   if (mode === "file-list") {
     helpText = splitMode
-      ? "Esc/q:quit  \u2191\u2193:move  \u2190\u2192:open/close  []:resize  Enter:diff  c:comments  p:prompt  t:unified  v:viewed"
-      : "Esc/q:quit  \u2191\u2193:move  \u2190\u2192:open/close  []:resize  Enter:diff  c:comments  p:prompt  t:split  v:viewed";
+      ? "Esc/q:quit  \u2191\u2193:move  \u2190\u2192:open/close  []:resize  Enter:diff  c:comment-list  p:prompt-preview  t:unified  v:viewed"
+      : "Esc/q:quit  \u2191\u2193:move  \u2190\u2192:open/close  []:resize  Enter:diff  c:comment-list  p:prompt-preview  t:split  v:viewed";
   } else if (mode === "diff-view") {
     helpText = splitMode
-      ? "Esc/q:back  \u2191\u2193:line  \u2190\u2192:side  Shift+\u2191\u2193:select  c:comment  d:delete  e:edit  f:file  t:unified  v:viewed  z:fold/unfold"
-      : "Esc/q:back  \u2191\u2193:line  Shift+\u2191\u2193:select  c:comment  d:delete  e:edit  f:file  t:split  v:viewed  z:fold/unfold";
+      ? "Esc/q:back  \u2191\u2193:line  \u2190\u2192:side  Shift+\u2191\u2193:select  c:comment  d:delete-comment  e:edit-comment  f:file-comment  t:unified  v:viewed  z:fold/unfold"
+      : "Esc/q:back  \u2191\u2193:line  Shift+\u2191\u2193:select  c:comment  d:delete-comment  e:edit-comment  f:file-comment  t:split  v:viewed  z:fold/unfold";
   } else if (mode === "comment-input") {
     helpText = "Esc:cancel  Ctrl+Enter:submit";
   } else if (mode === "comment-list") {

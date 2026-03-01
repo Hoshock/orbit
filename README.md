@@ -53,6 +53,7 @@ Make sure `~/.local/bin` is in your `PATH`.
 
 ```sh
 orbit                     # unstaged changes (git diff)
+orbit .                   # same as above
 orbit --staged            # staged changes (git diff --staged)
 orbit HEAD                # last commit (HEAD~1..HEAD)
 orbit HEAD~3..HEAD        # commit range
