@@ -23,11 +23,13 @@ import { savePrefs, saveViewedFiles } from "./data/comment-cache.ts";
 import { commentStore } from "./data/comment-store.ts";
 import { collapseDiff, FOLD_CHUNK_SIZE } from "./data/diff-collapse.ts";
 import {
+  buildSplitDisplayLineTypeMap,
   displayLineToSourceLine,
   displayLineToSourceLineSplit,
   displayRangeToSourceRange,
   displayRangeToSourceRangeSplit,
   findNearestFoldIdByDisplayLine,
+  findNextDisplayLineForSideSplit,
   getDisplayLineCount,
   getLineFromDiff,
   markerLinesUnifiedToSplit,
@@ -183,6 +185,10 @@ export function App({
     if (!splitMode) return visibleDiff.markerLines;
     return markerLinesUnifiedToSplit(activeDiff, visibleDiff.markerLines);
   }, [visibleDiff, splitMode, activeDiff]);
+  const splitDisplayLineTypes = useMemo(
+    () => (splitMode ? buildSplitDisplayLineTypeMap(activeDiff) : null),
+    [splitMode, activeDiff],
+  );
 
   const pendingRangeRef = useRef<{ start: number; end: number } | null>(null);
 
@@ -404,24 +410,46 @@ export function App({
           setSelectionAnchor(null);
           setMode("file-list");
           return;
-        case "down":
+        case "down": {
+          const nextLine = splitMode
+            ? findNextDisplayLineForSideSplit(
+                activeDiff,
+                cursorLine,
+                activeSide,
+                1,
+                splitDisplayLineTypes ?? undefined,
+              )
+            : Math.min(cursorLine + 1, maxLine);
+
           if (key.shift) {
             if (selectionAnchor === null) setSelectionAnchor(cursorLine);
-            setCursorLine((l) => Math.min(l + 1, maxLine));
+            if (nextLine !== cursorLine) setCursorLine(nextLine);
           } else {
             if (selectionAnchor !== null) setSelectionAnchor(null);
-            setCursorLine((l) => Math.min(l + 1, maxLine));
+            if (nextLine !== cursorLine) setCursorLine(nextLine);
           }
           return;
-        case "up":
+        }
+        case "up": {
+          const nextLine = splitMode
+            ? findNextDisplayLineForSideSplit(
+                activeDiff,
+                cursorLine,
+                activeSide,
+                -1,
+                splitDisplayLineTypes ?? undefined,
+              )
+            : Math.max(cursorLine - 1, 1);
+
           if (key.shift) {
             if (selectionAnchor === null) setSelectionAnchor(cursorLine);
-            setCursorLine((l) => Math.max(l - 1, 1));
+            if (nextLine !== cursorLine) setCursorLine(nextLine);
           } else {
             if (selectionAnchor !== null) setSelectionAnchor(null);
-            setCursorLine((l) => Math.max(l - 1, 1));
+            if (nextLine !== cursorLine) setCursorLine(nextLine);
           }
           return;
+        }
         case "left":
           if (splitMode) {
             setActiveSide("old");
@@ -915,9 +943,10 @@ export function App({
           }
           onCursorChange={
             mode === "diff-view"
-              ? (line) => {
+              ? (line, side) => {
                   const maxLine = getDisplayLineCount(activeDiff, splitMode);
                   setCursorLine(Math.min(line, maxLine));
+                  if (splitMode && side) setActiveSide(side);
                 }
               : undefined
           }

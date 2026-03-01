@@ -11,13 +11,21 @@ import { Header } from "../components/header.tsx";
 import { HelpBar } from "../components/help-bar.tsx";
 import { HomeScreen } from "../components/home-screen.tsx";
 import { PromptPreview } from "../components/prompt-preview.tsx";
+import { COLORS } from "../constants.ts";
 import { commentStore } from "../data/comment-store.ts";
+import {
+  buildSplitDisplayLineTypeMap,
+  displayLineToSourceLineSplit,
+  getDiffLineType,
+  getDisplayLineCount,
+} from "../data/diff-parser.ts";
 import type { DiffFile, ReviewComment } from "../types.ts";
 import { buildFileTree, flattenTree } from "../utils/file-tree.ts";
 
 const RENDER_OPTS = { width: 80, height: 24 };
 process.env.ORBIT_DISABLE_TREESITTER = "1";
 setMaxListeners(50);
+type DiffLineColor = Parameters<DiffRenderable["setLineColor"]>[1];
 
 function makeFile(overrides: Partial<DiffFile> = {}): DiffFile {
   return {
@@ -73,9 +81,12 @@ function makeFoldHeavyDiff(): string {
   return `${header}\n${hunk}`;
 }
 
-function findDiffRenderable(root: {
-  getChildren: () => unknown[];
-}): (DiffRenderable & { buildView: (...args: unknown[]) => unknown }) | null {
+function findDiffRenderable(root: { getChildren: () => unknown[] }):
+  | (DiffRenderable & {
+      buildView: (...args: unknown[]) => unknown;
+      clearLineColor: (line: number) => void;
+    })
+  | null {
   const stack: unknown[] = [root];
   while (stack.length > 0) {
     const cur = stack.pop();
@@ -83,10 +94,12 @@ function findDiffRenderable(root: {
     if (cur instanceof DiffRenderable) {
       const withBuild = cur as DiffRenderable & {
         buildView?: (...args: unknown[]) => unknown;
+        clearLineColor?: (line: number) => void;
       };
       if (typeof withBuild.buildView === "function") {
         return withBuild as DiffRenderable & {
           buildView: (...args: unknown[]) => unknown;
+          clearLineColor: (line: number) => void;
         };
       }
       continue;
@@ -491,6 +504,270 @@ describe("DiffView component", () => {
     const calledLine = onCursorChange.mock.calls[0]![0];
     expect(calledLine).toBeGreaterThan(0);
   });
+
+  it("reports clicked side in split mode", async () => {
+    const onCursorChange = mock(() => {});
+    const { mockMouse, renderOnce } = await testRender(
+      createElement(DiffView, {
+        file,
+        cursorLine: 1,
+        comments: [],
+        splitMode: true,
+        onCursorChange,
+      }),
+      RENDER_OPTS,
+    );
+    await renderOnce();
+    await mockMouse.click(5, 5);
+    await renderOnce();
+    await mockMouse.click(70, 5);
+    await renderOnce();
+
+    const sides = onCursorChange.mock.calls
+      .map((call) => call[1])
+      .filter((s): s is "old" | "new" => s === "old" || s === "new");
+    expect(sides).toContain("old");
+    expect(sides).toContain("new");
+  });
+
+  it("keeps native +/- line colors when cursor moves away", async () => {
+    let setCursorLine: ((line: number) => void) | null = null;
+    let mountedRenderer: { destroy: () => void } | null = null;
+    let patchedDiff:
+      | (DiffRenderable & { clearLineColor: (line: number) => void })
+      | null = null;
+    let originalClear: ((line: number) => void) | null = null;
+    let originalSet: ((line: number, color: DiffLineColor) => void) | null =
+      null;
+    const clearedLines: number[] = [];
+    const setCalls: Array<{ line: number; color: DiffLineColor }> = [];
+
+    const maxLine = getDisplayLineCount(file.rawDiff, false);
+    let addedLine: number | null = null;
+    let removedLine: number | null = null;
+    for (let d = 1; d <= maxLine; d++) {
+      const t = getDiffLineType(file.rawDiff, d);
+      if (t === "+" && addedLine === null) addedLine = d;
+      if (t === "-" && removedLine === null) removedLine = d;
+    }
+    expect(addedLine).not.toBeNull();
+    expect(removedLine).not.toBeNull();
+    if (!addedLine || !removedLine) return;
+
+    function Harness() {
+      const [cursor, setCursor] = useState(1);
+      setCursorLine = setCursor;
+      return createElement(DiffView, {
+        file,
+        cursorLine: cursor,
+        comments: [],
+        splitMode: false,
+      });
+    }
+
+    try {
+      const { renderOnce, renderer } = await testRender(
+        createElement(Harness),
+        RENDER_OPTS,
+      );
+      mountedRenderer = renderer;
+      await renderOnce();
+
+      const diffNode = findDiffRenderable(renderer.root);
+      expect(diffNode).not.toBeNull();
+      if (!diffNode) return;
+      patchedDiff = diffNode;
+      originalClear = patchedDiff.clearLineColor;
+      originalSet = patchedDiff.setLineColor.bind(patchedDiff);
+      patchedDiff.clearLineColor = (line: number) => {
+        clearedLines.push(line);
+        return originalClear?.call(patchedDiff, line);
+      };
+      patchedDiff.setLineColor = (line: number, color: DiffLineColor) => {
+        setCalls.push({ line, color });
+        originalSet?.(line, color);
+      };
+
+      await act(async () => {
+        setCursorLine?.(addedLine);
+        await renderOnce();
+      });
+      await act(async () => {
+        setCursorLine?.(Math.min(addedLine + 1, maxLine));
+        await renderOnce();
+      });
+
+      await act(async () => {
+        setCursorLine?.(removedLine);
+        await renderOnce();
+      });
+      await act(async () => {
+        setCursorLine?.(Math.min(removedLine + 1, maxLine));
+        await renderOnce();
+      });
+
+      expect(clearedLines).not.toContain(addedLine - 1);
+      expect(clearedLines).not.toContain(removedLine - 1);
+      const hasAddedNativeRestore = setCalls.some(
+        (c) =>
+          c.line === addedLine - 1 &&
+          typeof c.color === "object" &&
+          c.color !== null &&
+          "content" in c.color,
+      );
+      const hasRemovedNativeRestore = setCalls.some(
+        (c) =>
+          c.line === removedLine - 1 &&
+          typeof c.color === "object" &&
+          c.color !== null &&
+          "content" in c.color,
+      );
+      expect(hasAddedNativeRestore).toBeTrue();
+      expect(hasRemovedNativeRestore).toBeTrue();
+    } finally {
+      if (patchedDiff && originalClear) {
+        patchedDiff.clearLineColor = originalClear;
+      }
+      if (patchedDiff && originalSet) {
+        patchedDiff.setLineColor = originalSet;
+      }
+      if (mountedRenderer) {
+        await act(async () => {
+          mountedRenderer?.destroy();
+        });
+      }
+    }
+  });
+
+  it("restores split +/- native colors with gutter/content config", async () => {
+    const splitFile = makeFile({
+      rawDiff: `diff --git a/s.ts b/s.ts
+--- a/s.ts
++++ b/s.ts
+@@ -1,4 +1,4 @@
+ a
+-b_old
++b_new
+ c
+ d
+`,
+    });
+    const rows = buildSplitDisplayLineTypeMap(splitFile.rawDiff);
+    const changedLine = rows.findIndex((r) => r.old === "-" && r.new === "+");
+    expect(changedLine).toBeGreaterThan(0);
+    if (changedLine <= 0) return;
+
+    let setCursorLine: ((line: number) => void) | null = null;
+    let setSide: ((side: "old" | "new") => void) | null = null;
+    let mountedRenderer: { destroy: () => void } | null = null;
+    const leftSetCalls: Array<{ line: number; color: DiffLineColor }> = [];
+    const rightSetCalls: Array<{ line: number; color: DiffLineColor }> = [];
+    let restoreLeftSet: (() => void) | null = null;
+    let restoreRightSet: (() => void) | null = null;
+
+    function Harness() {
+      const [cursor, setCursor] = useState(1);
+      const [side, setActiveSide] = useState<"old" | "new">("old");
+      setCursorLine = setCursor;
+      setSide = setActiveSide;
+      return createElement(DiffView, {
+        file: splitFile,
+        cursorLine: cursor,
+        comments: [],
+        splitMode: true,
+        activeSide: side,
+      });
+    }
+
+    try {
+      const { renderOnce, renderer } = await testRender(
+        createElement(Harness),
+        RENDER_OPTS,
+      );
+      mountedRenderer = renderer;
+      await renderOnce();
+
+      const diffNode = findDiffRenderable(renderer.root);
+      expect(diffNode).not.toBeNull();
+      if (!diffNode) return;
+
+      const sides = diffNode as DiffRenderable & {
+        leftSide?: {
+          setLineColor: (line: number, color: DiffLineColor) => void;
+        };
+        rightSide?: {
+          setLineColor: (line: number, color: DiffLineColor) => void;
+        };
+      };
+      expect(sides.leftSide).toBeDefined();
+      expect(sides.rightSide).toBeDefined();
+      if (!sides.leftSide || !sides.rightSide) return;
+
+      const originalLeftSet = sides.leftSide.setLineColor.bind(sides.leftSide);
+      const originalRightSet = sides.rightSide.setLineColor.bind(
+        sides.rightSide,
+      );
+      sides.leftSide.setLineColor = (line: number, color: DiffLineColor) => {
+        leftSetCalls.push({ line, color });
+        originalLeftSet(line, color);
+      };
+      sides.rightSide.setLineColor = (line: number, color: DiffLineColor) => {
+        rightSetCalls.push({ line, color });
+        originalRightSet(line, color);
+      };
+      restoreLeftSet = () => {
+        sides.leftSide!.setLineColor = originalLeftSet;
+      };
+      restoreRightSet = () => {
+        sides.rightSide!.setLineColor = originalRightSet;
+      };
+
+      const moveLine = changedLine === 1 ? 2 : 1;
+      await act(async () => {
+        setSide?.("old");
+        setCursorLine?.(changedLine);
+        await renderOnce();
+      });
+      await act(async () => {
+        setCursorLine?.(moveLine);
+        await renderOnce();
+      });
+      await act(async () => {
+        setSide?.("new");
+        setCursorLine?.(changedLine);
+        await renderOnce();
+      });
+      await act(async () => {
+        setCursorLine?.(moveLine);
+        await renderOnce();
+      });
+
+      const leftRestoredAsConfig = leftSetCalls.some(
+        (c) =>
+          c.line === changedLine - 1 &&
+          typeof c.color === "object" &&
+          c.color !== null &&
+          "content" in c.color,
+      );
+      const rightRestoredAsConfig = rightSetCalls.some(
+        (c) =>
+          c.line === changedLine - 1 &&
+          typeof c.color === "object" &&
+          c.color !== null &&
+          "content" in c.color,
+      );
+      expect(leftRestoredAsConfig).toBeTrue();
+      expect(rightRestoredAsConfig).toBeTrue();
+    } finally {
+      if (restoreLeftSet) restoreLeftSet();
+      if (restoreRightSet) restoreRightSet();
+      if (mountedRenderer) {
+        await act(async () => {
+          mountedRenderer?.destroy();
+        });
+      }
+    }
+  });
 });
 
 // ── CommentList ──
@@ -756,5 +1033,97 @@ describe("DiffView component (additional)", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("First issue");
     expect(frame).toContain("Second issue");
+  });
+
+  it("keeps cursor highlight on split-side padded rows", async () => {
+    const splitPadFile = makeFile({
+      rawDiff: `diff --git a/pad.ts b/pad.ts
+--- a/pad.ts
++++ b/pad.ts
+@@ -1,4 +1,3 @@
+-a
+-b
++B
+ c
+ d
+`,
+    });
+
+    const max = getDisplayLineCount(splitPadFile.rawDiff, true);
+    let paddedOnNew: number | null = null;
+    for (let d = 1; d <= max; d++) {
+      const src = displayLineToSourceLineSplit(splitPadFile.rawDiff, d);
+      if (src.oldLine !== null && src.newLine === null) {
+        paddedOnNew = d;
+        break;
+      }
+    }
+    expect(paddedOnNew).not.toBeNull();
+    if (!paddedOnNew) return;
+
+    let setCursorLine: ((line: number) => void) | null = null;
+    let mountedRenderer: { destroy: () => void } | null = null;
+    let restoreRightSet: (() => void) | null = null;
+    const rightSetCalls: Array<{ line: number; color: DiffLineColor }> = [];
+
+    function Harness() {
+      const [cursor, setCursor] = useState(1);
+      setCursorLine = setCursor;
+      return createElement(DiffView, {
+        file: splitPadFile,
+        cursorLine: cursor,
+        comments: [],
+        splitMode: true,
+        activeSide: "new",
+      });
+    }
+
+    try {
+      const { renderOnce, renderer } = await testRender(
+        createElement(Harness),
+        RENDER_OPTS,
+      );
+      mountedRenderer = renderer;
+      await renderOnce();
+
+      const diffNode = findDiffRenderable(renderer.root);
+      expect(diffNode).not.toBeNull();
+      if (!diffNode) return;
+
+      const rightSide = (
+        diffNode as DiffRenderable & {
+          rightSide?: {
+            setLineColor: (line: number, color: DiffLineColor) => void;
+          };
+        }
+      ).rightSide;
+      expect(rightSide).toBeDefined();
+      if (!rightSide) return;
+      const originalRightSet = rightSide.setLineColor.bind(rightSide);
+      rightSide.setLineColor = (line: number, color: DiffLineColor) => {
+        rightSetCalls.push({ line, color });
+        originalRightSet(line, color);
+      };
+      restoreRightSet = () => {
+        rightSide.setLineColor = originalRightSet;
+      };
+
+      await act(async () => {
+        setCursorLine?.(paddedOnNew);
+        await renderOnce();
+      });
+
+      const hasCursorColorOnPadded = rightSetCalls.some(
+        (c) => c.line === paddedOnNew - 1 && c.color === COLORS.cursorLine,
+      );
+      expect(hasCursorColorOnPadded).toBeTrue();
+    } finally {
+      if (restoreRightSet) restoreRightSet();
+      if (mountedRenderer) {
+        await act(async () => {
+          mountedRenderer?.destroy();
+        });
+      }
+    }
   });
 });
