@@ -47,3 +47,50 @@ export interface CliOptions {
   /** Short hash for new (target) side, resolved at startup */
   newHash?: string;
 }
+
+export type OrbitInitialView = "unified" | "split";
+
+export interface OrbitFileTreeKeybindings {
+  quit: string;
+  commentList: string;
+  promptPreview: string;
+  toggleViewMode: string;
+  toggleViewed: string;
+  treeShrink: string;
+  treeGrow: string;
+}
+
+export interface OrbitDiffViewKeybindings {
+  quit: string;
+  comment: string;
+  deleteComment: string;
+  editComment: string;
+  fileComment: string;
+  toggleViewMode: string;
+  toggleViewed: string;
+  fold: string;
+}
+
+export interface OrbitCommentListKeybindings {
+  quit: string;
+  deleteComment: string;
+  editComment: string;
+}
+
+export interface OrbitPromptPreviewKeybindings {
+  quit: string;
+  copyPrompt: string;
+}
+
+export interface OrbitKeybindings {
+  fileTree: OrbitFileTreeKeybindings;
+  diffView: OrbitDiffViewKeybindings;
+  commentList: OrbitCommentListKeybindings;
+  promptPreview: OrbitPromptPreviewKeybindings;
+}
+
+export interface OrbitConfig {
+  fileTreeInitialWidth: number;
+  initialView: OrbitInitialView;
+  keybindings: OrbitKeybindings;
+}

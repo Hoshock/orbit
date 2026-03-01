@@ -1,5 +1,5 @@
 import type { ReviewComment } from "../types.ts";
-import { saveComments } from "./comment-cache.ts";
+import { saveSessionComments } from "./persistence.ts";
 
 type Listener = () => void;
 
@@ -33,7 +33,7 @@ class CommentStore {
 
   private flush() {
     if (this.cachePath) {
-      saveComments(this.cachePath, this.comments);
+      saveSessionComments(this.cachePath, this.comments);
     }
   }
 

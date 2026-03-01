@@ -13,16 +13,14 @@ import pythonWasm from "../assets/tree-sitter/python/tree-sitter-python.wasm" wi
 };
 import { App } from "./app.tsx";
 import { buildDiffArgs, parseArgs } from "./cli/args.ts";
-import {
-  getCachePath,
-  getPrefsCachePath,
-  getViewedCachePath,
-  loadComments,
-  loadPrefs,
-  loadViewedFiles,
-} from "./data/comment-cache.ts";
 import { commentStore } from "./data/comment-store.ts";
 import { parseDiffFiles } from "./data/diff-parser.ts";
+import {
+  ensureOrbitConfig,
+  getOrbitConfigPath,
+  getSessionCachePath,
+  loadSessionState,
+} from "./data/persistence.ts";
 import {
   getEmptyTreeHash,
   getRepoRoot,
@@ -55,13 +53,11 @@ Usage:
   orbit HEAD              last commit (HEAD~1..HEAD)
   orbit HEAD~3..HEAD      commit range
   orbit feature main      branch comparison
-  orbit --split           side-by-side view
   orbit --root SHA~1..SHA diff against empty tree if base is unresolvable
 
 Options:
   --staged                staged changes
   --root                  diff against empty tree if base ref is unresolvable
-  --split, --mode=split   split view (default: unified)
   -h, --help              show this help
 
 Keybindings:
@@ -92,6 +88,9 @@ async function main() {
   }
 
   const options = parseArgs(process.argv);
+  const configPath = getOrbitConfigPath();
+  const config = ensureOrbitConfig(configPath);
+  options.splitMode = config.initialView === "split";
 
   let repoRoot: string;
   try {
@@ -127,29 +126,17 @@ async function main() {
     process.exit(0);
   }
 
-  // Restore cached comments from previous session
-  const cachePath = getCachePath(repoRoot, options.base, options.target);
-  const cached = loadComments(cachePath);
-  if (cached.length > 0) {
-    commentStore.loadFromCache(cached);
+  // Restore cached session state from previous session
+  const sessionCachePath = getSessionCachePath(
+    repoRoot,
+    options.base,
+    options.target,
+  );
+  const session = loadSessionState(sessionCachePath);
+  if (session.comments.length > 0) {
+    commentStore.loadFromCache(session.comments);
   }
-  commentStore.setCachePath(cachePath);
-
-  // Restore cached viewed files
-  const viewedCachePath = getViewedCachePath(
-    repoRoot,
-    options.base,
-    options.target,
-  );
-  const cachedViewed = loadViewedFiles(viewedCachePath);
-
-  // Restore cached preferences (tree width, etc.)
-  const prefsCachePath = getPrefsCachePath(
-    repoRoot,
-    options.base,
-    options.target,
-  );
-  const cachedPrefs = loadPrefs(prefsCachePath);
+  commentStore.setCachePath(sessionCachePath);
 
   renderer = await createCliRenderer({
     exitOnCtrlC: true,
@@ -161,10 +148,11 @@ async function main() {
     <App
       files={files}
       options={options}
-      initialViewedFiles={cachedViewed}
-      viewedCachePath={viewedCachePath}
-      initialPrefs={cachedPrefs}
-      prefsCachePath={prefsCachePath}
+      initialViewedFiles={session.viewedFiles}
+      initialPrefs={session.prefs}
+      sessionCachePath={sessionCachePath}
+      config={config}
+      configPath={configPath}
       onQuit={shutdown}
     />,
   );

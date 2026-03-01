@@ -2,16 +2,14 @@ import type { CliOptions } from "../types.ts";
 
 export function parseArgs(argv: string[]): CliOptions {
   const args = argv.slice(2);
-  let splitMode = false;
+  const splitMode = false;
   let staged = false;
   let root = false;
 
   // Extract flags
   const positional: string[] = [];
   for (const arg of args) {
-    if (arg === "--mode=split" || arg === "--split") {
-      splitMode = true;
-    } else if (arg === "--staged") {
+    if (arg === "--staged") {
       staged = true;
     } else if (arg === "--root") {
       root = true;

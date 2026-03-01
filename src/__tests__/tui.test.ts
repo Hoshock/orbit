@@ -19,6 +19,10 @@ import {
   getDiffLineType,
   getDisplayLineCount,
 } from "../data/diff-parser.ts";
+import {
+  DEFAULT_ORBIT_CONFIG,
+  DEFAULT_ORBIT_KEYBINDINGS,
+} from "../data/persistence.ts";
 import type { DiffFile, ReviewComment } from "../types.ts";
 import { buildFileTree, flattenTree } from "../utils/file-tree.ts";
 
@@ -186,6 +190,26 @@ describe("HelpBar component", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("Ctrl+Enter");
     expect(frame).toContain("Esc");
+  });
+
+  it("reflects custom keybindings", async () => {
+    const { captureCharFrame, renderOnce } = await testRender(
+      createElement(HelpBar, {
+        mode: "file-list",
+        keybindings: {
+          ...DEFAULT_ORBIT_KEYBINDINGS,
+          fileTree: {
+            ...DEFAULT_ORBIT_KEYBINDINGS.fileTree,
+            promptPreview: "o",
+          },
+        },
+      }),
+      RENDER_OPTS,
+    );
+    await renderOnce();
+    const frame = captureCharFrame();
+    expect(frame).toContain("o:");
+    expect(frame).toContain("prompt-preview");
   });
 });
 
@@ -427,6 +451,48 @@ describe("App integration", () => {
       if (patchedDiff && originalBuildView) {
         patchedDiff.buildView = originalBuildView;
       }
+    }
+  });
+
+  it("uses configured keybinding in file-list mode", async () => {
+    commentStore.reset();
+    const { captureCharFrame, mockInput, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files: [makeFile()],
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: false,
+            root: false,
+          },
+          config: {
+            ...DEFAULT_ORBIT_CONFIG,
+            keybindings: {
+              ...DEFAULT_ORBIT_KEYBINDINGS,
+              fileTree: {
+                ...DEFAULT_ORBIT_KEYBINDINGS.fileTree,
+                promptPreview: "o",
+              },
+            },
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressKey("o");
+        await renderOnce();
+      });
+      const frame = captureCharFrame();
+      expect(frame).toContain("Prompt Preview");
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
     }
   });
 });

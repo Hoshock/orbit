@@ -58,7 +58,6 @@ orbit --staged            # staged changes (git diff --staged)
 orbit HEAD                # last commit (HEAD~1..HEAD)
 orbit HEAD~3..HEAD        # commit range
 orbit feature main        # branch comparison
-orbit --split             # side-by-side view
 orbit --root SHA~1..SHA   # diff against empty tree if base is unresolvable
 ```
 
@@ -96,6 +95,8 @@ Press `o` in any of these panels to open orbit:
 For commit ranges, select multiple commits with `v` (visual mode) or `shift+up/down` in lazygit, then press `o`. The `~1` ensures the first selected commit is included in the diff. The `--root` flag handles the case where the selection includes the initial commit by diffing against an empty tree.
 
 ## Keybindings
+
+The following are default keybindings. You can override them in `config.toml`.
 
 ### File list
 
@@ -169,13 +170,51 @@ Paste that into Claude Code (or any LLM) and it has enough context to act on eac
 
 Comments, viewed status, and tree panel width are automatically saved and restored across sessions.
 
-| Data             | Cache file                             |
-| ---------------- | -------------------------------------- |
-| Comments         | `/tmp/orbit-<repo>-<hash>.json`        |
-| Viewed files     | `/tmp/orbit-<repo>-<hash>-viewed.json` |
-| Tree panel width | `/tmp/orbit-<repo>-<hash>-prefs.json`  |
+| Data                          | Cache file                      |
+| ----------------------------- | ------------------------------- |
+| Comments, viewed, tree width  | `/tmp/orbit-<repo>-<hash>.json` |
 
 The hash is derived from the diff range (e.g., `HEAD~1..HEAD`), so different ranges get separate caches. Cache files live in `/tmp` and are cleared on OS restart.
+
+## Configuration
+
+orbit reads custom settings from `${XDG_CONFIG_HOME:-~/.config}/orbit/config.toml`.
+If the file (or a specific key) is missing, default values are used.
+
+```toml
+file_tree_initial_width = 0.2
+initial_view = "unified" # or "split"
+
+[keybindings.file-tree]
+quit = "q"
+tree_shrink = "["
+tree_grow = "]"
+comment_list = "c"
+prompt_preview = "p"
+toggle_view_mode = "t"
+toggle_viewed = "v"
+
+[keybindings.diff-view]
+quit = "q"
+comment = "c"
+delete_comment = "d"
+edit_comment = "e"
+file_comment = "f"
+toggle_view_mode = "t"
+toggle_viewed = "v"
+fold = "z"
+
+# comment-input has no configurable keybindings (Esc / Ctrl+Enter fixed)
+
+[keybindings.comment-list]
+quit = "q"
+delete_comment = "d"
+edit_comment = "e"
+
+[keybindings.prompt-preview]
+quit = "q"
+copy_prompt = "y"
+```
 
 ## Stack
 

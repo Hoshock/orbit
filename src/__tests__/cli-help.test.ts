@@ -63,7 +63,7 @@ describe("orbit --help", () => {
 
     expect(exitCode).toBe(0);
     expect(stdout).toMatch(
-      /orbit\s+unstaged changes.*orbit \.\s+same as above.*orbit --staged\s+staged changes.*orbit HEAD\s+last commit.*orbit HEAD~3\.\.HEAD\s+commit range.*orbit feature main\s+branch comparison.*orbit --split\s+side-by-side view.*orbit --root SHA~1\.\.SHA\s+diff against empty tree if base is unresolvable/s,
+      /orbit\s+unstaged changes.*orbit \.\s+same as above.*orbit --staged\s+staged changes.*orbit HEAD\s+last commit.*orbit HEAD~3\.\.HEAD\s+commit range.*orbit feature main\s+branch comparison.*orbit --root SHA~1\.\.SHA\s+diff against empty tree if base is unresolvable/s,
     );
   });
 

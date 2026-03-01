@@ -19,7 +19,6 @@ import { Header } from "./components/header.tsx";
 import { HelpBar } from "./components/help-bar.tsx";
 import { HomeScreen } from "./components/home-screen.tsx";
 import { PromptPreview } from "./components/prompt-preview.tsx";
-import { savePrefs, saveViewedFiles } from "./data/comment-cache.ts";
 import { commentStore } from "./data/comment-store.ts";
 import { collapseDiff, FOLD_CHUNK_SIZE } from "./data/diff-collapse.ts";
 import {
@@ -36,8 +35,20 @@ import {
   sourceLineToDisplayLine,
   sourceLineToDisplayLineSplit,
 } from "./data/diff-parser.ts";
+import {
+  DEFAULT_ORBIT_CONFIG,
+  saveOrbitConfig,
+  saveSessionPrefs,
+  saveSessionViewedFiles,
+} from "./data/persistence.ts";
 import { formatPrompt } from "./data/prompt-formatter.ts";
-import type { AppMode, CliOptions, DiffFile, ReviewComment } from "./types.ts";
+import type {
+  AppMode,
+  CliOptions,
+  DiffFile,
+  OrbitConfig,
+  ReviewComment,
+} from "./types.ts";
 import { copyToClipboard } from "./utils/clipboard.ts";
 import { buildFileTree, flattenTree } from "./utils/file-tree.ts";
 
@@ -45,19 +56,33 @@ interface AppProps {
   files: DiffFile[];
   options: CliOptions;
   initialViewedFiles?: Set<string>;
-  viewedCachePath?: string;
+  sessionCachePath?: string;
   initialPrefs?: Record<string, unknown>;
-  prefsCachePath?: string;
+  config?: OrbitConfig;
+  configPath?: string;
   onQuit: () => void;
+}
+
+function isBindingPressed(
+  key: { name?: string; raw?: string },
+  binding: string,
+): boolean {
+  const normalized = binding.trim().toLowerCase();
+  if (normalized.length === 0) return false;
+  return (
+    key.name?.toLowerCase() === normalized ||
+    key.raw?.toLowerCase() === normalized
+  );
 }
 
 export function App({
   files,
   options,
   initialViewedFiles,
-  viewedCachePath,
+  sessionCachePath,
   initialPrefs,
-  prefsCachePath,
+  config,
+  configPath,
   onQuit,
 }: AppProps) {
   const { width, height } = useTerminalDimensions();
@@ -124,13 +149,19 @@ export function App({
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
   // In split mode: which side is focused ("old" = before, "new" = after)
   const [activeSide, setActiveSide] = useState<"old" | "new">("new");
+  const [defaultSplitMode, setDefaultSplitMode] = useState(options.splitMode);
+  const keybindings = config?.keybindings ?? DEFAULT_ORBIT_CONFIG.keybindings;
+  const fileTreeKeys = keybindings.fileTree;
+  const diffViewKeys = keybindings.diffView;
+  const commentListKeys = keybindings.commentList;
+  const promptPreviewKeys = keybindings.promptPreview;
 
   // Persist viewed files to cache on change
   useEffect(() => {
-    if (viewedCachePath) {
-      saveViewedFiles(viewedCachePath, viewedFiles);
+    if (sessionCachePath) {
+      saveSessionViewedFiles(sessionCachePath, viewedFiles);
     }
-  }, [viewedFiles, viewedCachePath]);
+  }, [viewedFiles, sessionCachePath]);
 
   // Tree state for file-list mode
   const [treeIndex, setTreeIndex] = useState(0);
@@ -140,15 +171,28 @@ export function App({
     const saved = initialPrefs?.treePercent;
     return typeof saved === "number" && saved >= 0.1 && saved <= 0.5
       ? saved
-      : 0.2;
+      : (config?.fileTreeInitialWidth ??
+          DEFAULT_ORBIT_CONFIG.fileTreeInitialWidth);
   });
 
   // Persist tree width to prefs on change
   useEffect(() => {
-    if (prefsCachePath) {
-      savePrefs(prefsCachePath, { treePercent });
+    if (sessionCachePath) {
+      saveSessionPrefs(sessionCachePath, { treePercent });
     }
-  }, [treePercent, prefsCachePath]);
+  }, [treePercent, sessionCachePath]);
+
+  useEffect(() => {
+    if (!configPath) return;
+    saveOrbitConfig(
+      {
+        fileTreeInitialWidth: treePercent,
+        initialView: defaultSplitMode ? "split" : "unified",
+        keybindings,
+      },
+      configPath,
+    );
+  }, [configPath, defaultSplitMode, keybindings, treePercent]);
 
   // Fold/unfold state: file path → (foldId → revealedLines)
   const [expandedFolds, setExpandedFolds] = useState<
@@ -280,16 +324,13 @@ export function App({
     if (mode === "comment-input") {
       if (key.name === "escape") {
         handleCommentCancel();
-        return;
       }
       return;
     }
 
-    // ── file-list ──
     if (mode === "file-list") {
       switch (key.name) {
         case "escape":
-        case "q":
           onQuit();
           return;
         case "down":
@@ -302,14 +343,12 @@ export function App({
           const row = flatRows[treeIndex];
           if (!row) return;
           if (row.node.isDir && !collapsedDirs.has(row.node.path)) {
-            // Collapse expanded directory
             setCollapsedDirs((prev) => {
               const next = new Set(prev);
               next.add(row.node.path);
               return next;
             });
           } else {
-            // Jump to parent directory
             const parentPath = row.node.path.includes("/")
               ? row.node.path.slice(0, row.node.path.lastIndexOf("/"))
               : null;
@@ -337,7 +376,6 @@ export function App({
           const row = flatRows[treeIndex];
           if (!row) return;
           if (row.node.isDir) {
-            // Toggle directory expand/collapse
             setCollapsedDirs((prev) => {
               const next = new Set(prev);
               if (next.has(row.node.path)) {
@@ -354,46 +392,56 @@ export function App({
           }
           return;
         }
-        case "t":
-          setPreviewSplitMode((s) => !s);
-          return;
-        case "v": {
-          const row = flatRows[treeIndex];
-          if (row && row.fileIndex !== null && row.node.file) {
-            const path = row.node.file.path;
-            setViewedFiles((prev) => {
-              const next = new Set(prev);
-              if (next.has(path)) {
-                next.delete(path);
-              } else {
-                next.add(path);
-              }
-              return next;
-            });
-          }
-          return;
-        }
-        case "c":
-          setMode("comment-list");
-          setCommentIndex(0);
-          return;
-        case "p":
-          setMode("prompt-preview");
-          return;
       }
-      // [ / ] to resize tree panel (5% steps, min 10% max 50%)
-      if (key.raw === "[") {
+
+      if (isBindingPressed(key, fileTreeKeys.quit)) {
+        onQuit();
+        return;
+      }
+      if (isBindingPressed(key, fileTreeKeys.toggleViewMode)) {
+        setPreviewSplitMode((s) => {
+          const next = !s;
+          setDefaultSplitMode(next);
+          return next;
+        });
+        return;
+      }
+      if (isBindingPressed(key, fileTreeKeys.toggleViewed)) {
+        const row = flatRows[treeIndex];
+        if (row && row.fileIndex !== null && row.node.file) {
+          const path = row.node.file.path;
+          setViewedFiles((prev) => {
+            const next = new Set(prev);
+            if (next.has(path)) {
+              next.delete(path);
+            } else {
+              next.add(path);
+            }
+            return next;
+          });
+        }
+        return;
+      }
+      if (isBindingPressed(key, fileTreeKeys.commentList)) {
+        setMode("comment-list");
+        setCommentIndex(0);
+        return;
+      }
+      if (isBindingPressed(key, fileTreeKeys.promptPreview)) {
+        setMode("prompt-preview");
+        return;
+      }
+      if (isBindingPressed(key, fileTreeKeys.treeShrink)) {
         setTreePercent((p) => Math.max(0.1, Math.round((p - 0.05) * 20) / 20));
         return;
       }
-      if (key.raw === "]") {
+      if (isBindingPressed(key, fileTreeKeys.treeGrow)) {
         setTreePercent((p) => Math.min(0.5, Math.round((p + 0.05) * 20) / 20));
         return;
       }
       return;
     }
 
-    // ── diff-view ──
     if (mode === "diff-view") {
       if (!currentFile) return;
       const maxLine = getDisplayLineCount(activeDiff, splitMode);
@@ -405,10 +453,6 @@ export function App({
           } else {
             setMode("file-list");
           }
-          return;
-        case "q":
-          setSelectionAnchor(null);
-          setMode("file-list");
           return;
         case "down": {
           const nextLine = splitMode
@@ -451,223 +495,214 @@ export function App({
           return;
         }
         case "left":
-          if (splitMode) {
-            setActiveSide("old");
-          }
+          if (splitMode) setActiveSide("old");
           return;
         case "right":
-          if (splitMode) {
-            setActiveSide("new");
-          }
+          if (splitMode) setActiveSide("new");
           return;
-        case "c": {
-          // Block commenting on fold marker lines
-          if (markerLinesForView?.has(cursorLine)) {
-            showFlash("Cannot comment on fold marker");
+      }
+
+      if (isBindingPressed(key, diffViewKeys.quit)) {
+        setSelectionAnchor(null);
+        setMode("file-list");
+        return;
+      }
+      if (isBindingPressed(key, diffViewKeys.comment)) {
+        if (markerLinesForView?.has(cursorLine)) {
+          showFlash("Cannot comment on fold marker");
+          return;
+        }
+        if (selectionRange) {
+          for (let l = selectionRange.start; l <= selectionRange.end; l++) {
+            if (markerLinesForView?.has(l)) {
+              showFlash("Selection includes fold marker");
+              return;
+            }
+          }
+          const rangeInfo = resolveRangeAndSide(
+            activeDiff,
+            selectionRange.start,
+            selectionRange.end,
+          );
+          if (!rangeInfo) {
+            showFlash("No lines on this side");
             return;
           }
-          if (selectionRange) {
-            for (let l = selectionRange.start; l <= selectionRange.end; l++) {
-              if (markerLinesForView?.has(l)) {
-                showFlash("Selection includes fold marker");
-                return;
-              }
-            }
-            const rangeInfo = resolveRangeAndSide(
-              activeDiff,
-              selectionRange.start,
-              selectionRange.end,
-            );
-            if (!rangeInfo) {
-              showFlash("No lines on this side");
-              return;
-            }
-            startComment(selectionRange);
-          } else {
-            const info = resolveLineAndSide(activeDiff, cursorLine);
-            if (!info) {
-              showFlash("No line on this side");
-              return;
-            }
-            startComment(cursorLine);
+          startComment(selectionRange);
+        } else {
+          const info = resolveLineAndSide(activeDiff, cursorLine);
+          if (!info) {
+            showFlash("No line on this side");
+            return;
           }
-          return;
+          startComment(cursorLine);
         }
-        case "f": {
-          // File-level comment (line=0)
-          setCursorLine(0);
-          setEditingComment(null);
+        return;
+      }
+      if (isBindingPressed(key, diffViewKeys.fileComment)) {
+        setCursorLine(0);
+        setEditingComment(null);
+        pendingRangeRef.current = null;
+        setMode("comment-input");
+        return;
+      }
+      if (isBindingPressed(key, diffViewKeys.fold)) {
+        if (!visibleDiff) return;
+
+        let targetFoldId: number;
+        let action: "expand" | "collapse";
+
+        const markerFoldId = markerLinesForView?.get(cursorLine);
+        if (markerFoldId !== undefined) {
+          targetFoldId = markerFoldId;
+          action = "expand";
+        } else {
+          const nearestFoldId = findNearestFoldIdByDisplayLine(
+            activeDiff,
+            visibleDiff.folds,
+            cursorLine,
+            splitMode,
+          );
+          if (nearestFoldId === null) {
+            showFlash("No fold nearby");
+            return;
+          }
+          targetFoldId = nearestFoldId;
+          const expMap =
+            expandedFolds.get(currentFile.path) ?? new Map<number, number>();
+          const nearestFold = visibleDiff.folds.find(
+            (f) => f.id === nearestFoldId,
+          );
+          if (!nearestFold) return;
+          const revealed = expMap.get(nearestFold.id) ?? 0;
+          action = revealed >= nearestFold.hiddenCount ? "collapse" : "expand";
+        }
+
+        const fold = visibleDiff.folds.find((f) => f.id === targetFoldId);
+        if (!fold) return;
+
+        const oldExpMap =
+          expandedFolds.get(currentFile.path) ?? new Map<number, number>();
+        const newExpMap = new Map(oldExpMap);
+        const prevRevealed = oldExpMap.get(targetFoldId) ?? 0;
+
+        if (action === "expand") {
+          const chunk = Math.min(
+            FOLD_CHUNK_SIZE,
+            fold.hiddenCount - prevRevealed,
+          );
+          newExpMap.set(
+            targetFoldId,
+            Math.min(prevRevealed + chunk, fold.hiddenCount),
+          );
+        } else {
+          newExpMap.delete(targetFoldId);
+        }
+
+        const newResult = collapseDiff(
+          currentFile.rawDiff,
+          newExpMap,
+          markerWidth,
+        );
+        const anchorInfo = resolveLineAndSide(activeDiff, cursorLine);
+
+        let newCursor = 1;
+        if (action === "collapse") {
+          const nextMarkerLines = splitMode
+            ? markerLinesUnifiedToSplit(newResult.diff, newResult.markerLines)
+            : newResult.markerLines;
+          for (const [dispLine, fId] of nextMarkerLines) {
+            if (fId === targetFoldId) {
+              newCursor = dispLine;
+              break;
+            }
+          }
+        } else if (anchorInfo) {
+          const dispLine = splitMode
+            ? sourceLineToDisplayLineSplit(
+                newResult.diff,
+                anchorInfo.line,
+                anchorInfo.side,
+              )
+            : sourceLineToDisplayLine(
+                newResult.diff,
+                anchorInfo.line,
+                anchorInfo.side,
+              );
+          newCursor = dispLine ?? 1;
+        }
+
+        setExpandedFolds((prev) => {
+          const next = new Map(prev);
+          next.set(currentFile.path, newExpMap);
+          return next;
+        });
+        setCursorLine(newCursor);
+
+        if (action === "collapse") {
+          showFlash(
+            `Collapsed L${fold.newLineStart}-${fold.newLineEnd} (${fold.hiddenCount} lines)`,
+          );
+        } else {
+          const remaining =
+            fold.hiddenCount - (newExpMap.get(targetFoldId) ?? 0);
+          const chunk = (newExpMap.get(targetFoldId) ?? 0) - prevRevealed;
+          if (remaining > 0) {
+            showFlash(`+${chunk} lines (${remaining} still hidden)`);
+          } else {
+            showFlash(`Fully expanded (${fold.hiddenCount} lines)`);
+          }
+        }
+        return;
+      }
+      if (isBindingPressed(key, diffViewKeys.editComment)) {
+        const existing = findCommentAtLine(cursorLine);
+        if (existing) {
+          setEditingComment(existing);
           pendingRangeRef.current = null;
           setMode("comment-input");
-          return;
         }
-        case "z": {
-          if (!visibleDiff) return;
-
-          // Determine which fold to act on and the action
-          let targetFoldId: number;
-          let action: "expand" | "collapse";
-
-          const markerFoldId = markerLinesForView?.get(cursorLine);
-          if (markerFoldId !== undefined) {
-            targetFoldId = markerFoldId;
-            action = "expand";
-          } else {
-            const nearestFoldId = findNearestFoldIdByDisplayLine(
-              activeDiff,
-              visibleDiff.folds,
-              cursorLine,
-              splitMode,
-            );
-            if (nearestFoldId === null) {
-              showFlash("No fold nearby");
-              return;
-            }
-            targetFoldId = nearestFoldId;
-            const expMap =
-              expandedFolds.get(currentFile.path) ?? new Map<number, number>();
-            const nearestFold = visibleDiff.folds.find(
-              (f) => f.id === nearestFoldId,
-            );
-            if (!nearestFold) return;
-            const revealed = expMap.get(nearestFold.id) ?? 0;
-            action =
-              revealed >= nearestFold.hiddenCount ? "collapse" : "expand";
-          }
-
-          const fold = visibleDiff.folds.find((f) => f.id === targetFoldId);
-          if (!fold) return;
-
-          // Build the new expanded-folds map
-          const oldExpMap =
-            expandedFolds.get(currentFile.path) ?? new Map<number, number>();
-          const newExpMap = new Map(oldExpMap);
-          const prevRevealed = oldExpMap.get(targetFoldId) ?? 0;
-
-          if (action === "expand") {
-            const chunk = Math.min(
-              FOLD_CHUNK_SIZE,
-              fold.hiddenCount - prevRevealed,
-            );
-            newExpMap.set(
-              targetFoldId,
-              Math.min(prevRevealed + chunk, fold.hiddenCount),
-            );
-          } else {
-            newExpMap.delete(targetFoldId);
-          }
-
-          // Compute new collapsed diff to get correct cursor position
-          const newResult = collapseDiff(
-            currentFile.rawDiff,
-            newExpMap,
-            markerWidth,
-          );
-
-          // Resolve cursor anchor: source line at current cursor position
-          const anchorInfo = resolveLineAndSide(activeDiff, cursorLine);
-
-          let newCursor = 1;
-          if (action === "collapse") {
-            // After collapse: position cursor on the fold marker
-            const nextMarkerLines = splitMode
-              ? markerLinesUnifiedToSplit(newResult.diff, newResult.markerLines)
-              : newResult.markerLines;
-            for (const [dispLine, fId] of nextMarkerLines) {
-              if (fId === targetFoldId) {
-                newCursor = dispLine;
-                break;
-              }
-            }
-          } else if (anchorInfo) {
-            // After expand: keep cursor near its source line
-            const dispLine = splitMode
-              ? sourceLineToDisplayLineSplit(
-                  newResult.diff,
-                  anchorInfo.line,
-                  anchorInfo.side,
-                )
-              : sourceLineToDisplayLine(
-                  newResult.diff,
-                  anchorInfo.line,
-                  anchorInfo.side,
-                );
-            newCursor = dispLine ?? 1;
-          }
-
-          // Batch state updates so DiffView gets both new diff + correct
-          // cursor in a single render pass, preventing scroll jitter.
-          setExpandedFolds((prev) => {
-            const next = new Map(prev);
-            next.set(currentFile.path, newExpMap);
+        return;
+      }
+      if (isBindingPressed(key, diffViewKeys.deleteComment)) {
+        const existing = findCommentAtLine(cursorLine);
+        if (existing) {
+          commentStore.remove(existing.id);
+          showFlash("Comment deleted");
+        }
+        return;
+      }
+      if (isBindingPressed(key, diffViewKeys.toggleViewMode)) {
+        setSplitMode((s) => {
+          const next = !s;
+          setDefaultSplitMode(next);
+          return next;
+        });
+        return;
+      }
+      if (isBindingPressed(key, diffViewKeys.toggleViewed)) {
+        const path = currentFile.path;
+        setViewedFiles((prev) => {
+          const next = new Set(prev);
+          if (next.has(path)) {
+            next.delete(path);
             return next;
-          });
-          setCursorLine(newCursor);
-
-          // Flash message
-          if (action === "collapse") {
-            showFlash(
-              `Collapsed L${fold.newLineStart}-${fold.newLineEnd} (${fold.hiddenCount} lines)`,
-            );
-          } else {
-            const remaining =
-              fold.hiddenCount - (newExpMap.get(targetFoldId) ?? 0);
-            const chunk = (newExpMap.get(targetFoldId) ?? 0) - prevRevealed;
-            if (remaining > 0) {
-              showFlash(`+${chunk} lines (${remaining} still hidden)`);
-            } else {
-              showFlash(`Fully expanded (${fold.hiddenCount} lines)`);
-            }
           }
-          return;
-        }
-        case "e": {
-          const existing = findCommentAtLine(cursorLine);
-          if (existing) {
-            setEditingComment(existing);
-            pendingRangeRef.current = null;
-            setMode("comment-input");
-          }
-          return;
-        }
-        case "d": {
-          const existing = findCommentAtLine(cursorLine);
-          if (existing) {
-            commentStore.remove(existing.id);
-            showFlash("Comment deleted");
-          }
-          return;
-        }
-        case "t":
-          setSplitMode((s) => !s);
-          return;
-        case "v": {
-          const path = currentFile.path;
-          setViewedFiles((prev) => {
-            const next = new Set(prev);
-            if (next.has(path)) {
-              next.delete(path);
-              return next;
-            }
-            next.add(path);
-            return next;
-          });
-          showFlash(
-            viewedFiles.has(currentFile.path)
-              ? "Unmarked as viewed"
-              : "\u2713 Marked as viewed",
-          );
-          return;
-        }
+          next.add(path);
+          return next;
+        });
+        showFlash(
+          viewedFiles.has(currentFile.path)
+            ? "Unmarked as viewed"
+            : "\u2713 Marked as viewed",
+        );
       }
       return;
     }
 
-    // ── comment-list ──
     if (mode === "comment-list") {
       switch (key.name) {
         case "escape":
-        case "q":
           setMode("file-list");
           return;
         case "down":
@@ -702,64 +737,67 @@ export function App({
           }
           return;
         }
-        case "e": {
-          const selected = comments[commentIndex];
-          if (selected) {
-            setEditingComment(selected);
-            const fIdx = files.findIndex((f) => f.path === selected.filePath);
-            if (fIdx >= 0) setFileIndex(fIdx);
-            pendingRangeRef.current = null;
-            const targetIdx = fIdx >= 0 ? fIdx : fileIndex;
-            const exp =
-              expandedFolds.get(files[targetIdx]!.path) ??
-              new Map<number, number>();
-            const collapsed = collapseDiff(files[targetIdx]!.rawDiff, exp);
-            const srcLine =
-              typeof selected.position.line === "number"
-                ? selected.position.line
-                : selected.position.line.start;
-            const dispLine = resolveDisplayLine(
-              collapsed.diff,
-              srcLine,
-              selected.position.side,
-            );
-            setCursorLine(dispLine ?? 1);
-            setActiveSide(selected.position.side);
-            setMode("comment-input");
-          }
-          return;
+      }
+
+      if (isBindingPressed(key, commentListKeys.quit)) {
+        setMode("file-list");
+        return;
+      }
+      if (isBindingPressed(key, commentListKeys.editComment)) {
+        const selected = comments[commentIndex];
+        if (selected) {
+          setEditingComment(selected);
+          const fIdx = files.findIndex((f) => f.path === selected.filePath);
+          if (fIdx >= 0) setFileIndex(fIdx);
+          pendingRangeRef.current = null;
+          const targetIdx = fIdx >= 0 ? fIdx : fileIndex;
+          const exp =
+            expandedFolds.get(files[targetIdx]!.path) ??
+            new Map<number, number>();
+          const collapsed = collapseDiff(files[targetIdx]!.rawDiff, exp);
+          const srcLine =
+            typeof selected.position.line === "number"
+              ? selected.position.line
+              : selected.position.line.start;
+          const dispLine = resolveDisplayLine(
+            collapsed.diff,
+            srcLine,
+            selected.position.side,
+          );
+          setCursorLine(dispLine ?? 1);
+          setActiveSide(selected.position.side);
+          setMode("comment-input");
         }
-        case "d": {
-          const selected = comments[commentIndex];
-          if (selected) {
-            commentStore.remove(selected.id);
-            setCommentIndex((i) =>
-              Math.max(0, Math.min(i, comments.length - 2)),
-            );
-            showFlash("Comment deleted");
-          }
-          return;
+        return;
+      }
+      if (isBindingPressed(key, commentListKeys.deleteComment)) {
+        const selected = comments[commentIndex];
+        if (selected) {
+          commentStore.remove(selected.id);
+          setCommentIndex((i) => Math.max(0, Math.min(i, comments.length - 2)));
+          showFlash("Comment deleted");
         }
       }
       return;
     }
 
-    // ── prompt-preview ──
     if (mode === "prompt-preview") {
       switch (key.name) {
         case "escape":
-        case "q":
           setMode("file-list");
           return;
-        case "y": {
-          const prompt = formatPrompt(comments, {
-            oldHash: options.oldHash,
-            newHash: options.newHash,
-          });
-          if (copyToClipboard(prompt)) {
-            showFlash("Prompt copied to clipboard");
-          }
-          return;
+      }
+      if (isBindingPressed(key, promptPreviewKeys.quit)) {
+        setMode("file-list");
+        return;
+      }
+      if (isBindingPressed(key, promptPreviewKeys.copyPrompt)) {
+        const prompt = formatPrompt(comments, {
+          oldHash: options.oldHash,
+          newHash: options.newHash,
+        });
+        if (copyToClipboard(prompt)) {
+          showFlash("Prompt copied to clipboard");
         }
       }
       return;
@@ -1024,6 +1062,7 @@ export function App({
         mode={mode}
         flash={flash}
         splitMode={mode === "file-list" ? previewSplitMode : splitMode}
+        keybindings={keybindings}
       />
     </box>
   );

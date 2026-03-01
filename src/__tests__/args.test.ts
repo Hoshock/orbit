@@ -76,24 +76,6 @@ describe("parseArgs", () => {
     });
   });
 
-  it("--split flag", () => {
-    expect(parseArgs(argv(["HEAD", "--split"]))).toEqual({
-      base: "HEAD~1",
-      target: "HEAD",
-      splitMode: true,
-      root: false,
-    });
-  });
-
-  it("--mode=split flag", () => {
-    expect(parseArgs(argv(["--mode=split"]))).toEqual({
-      base: "",
-      target: "",
-      splitMode: true,
-      root: false,
-    });
-  });
-
   it("--root flag", () => {
     expect(parseArgs(argv(["--root", "HEAD~3..HEAD"]))).toEqual({
       base: "HEAD~3",
@@ -114,6 +96,15 @@ describe("parseArgs", () => {
 
   it("unknown flags are ignored", () => {
     expect(parseArgs(argv(["--unknown", "HEAD"]))).toEqual({
+      base: "HEAD~1",
+      target: "HEAD",
+      splitMode: false,
+      root: false,
+    });
+  });
+
+  it("--split is ignored", () => {
+    expect(parseArgs(argv(["HEAD", "--split"]))).toEqual({
       base: "HEAD~1",
       target: "HEAD",
       splitMode: false,
