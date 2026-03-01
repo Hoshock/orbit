@@ -3,6 +3,12 @@ const CONTEXT_LINES = 3;
 /** Minimum consecutive context lines to qualify for folding. */
 const MIN_FOLDABLE = CONTEXT_LINES * 2 + 1;
 
+/** Number of lines to reveal per incremental unfold step. */
+export const FOLD_CHUNK_SIZE = 20;
+
+/** Substring used to identify fold marker lines in the diff output. */
+export const FOLD_MARKER_PATTERN = " lines hidden (z to expand) ";
+
 export interface FoldRegion {
   id: number;
   /** Lines hidden when folded. */
@@ -15,16 +21,27 @@ export interface FoldRegion {
 export interface CollapsedDiff {
   diff: string;
   folds: FoldRegion[];
+  /** Maps 1-indexed display line positions to fold IDs for marker lines. */
+  markerLines: Map<number, number>;
 }
 
 /**
  * Collapse a full-context unified diff, hiding long unchanged sections.
- * Zones in `expanded` are kept fully visible.
+ * `expanded` maps fold IDs to the number of revealed lines (incremental unfold).
+ * A fold is fully expanded when revealed >= hiddenCount.
+ * `contentWidth` controls the width of fold marker lines (centered text).
  */
 export function collapseDiff(
   fullDiff: string,
-  expanded: Set<number>,
+  expanded: Map<number, number>,
+  contentWidth = 80,
 ): CollapsedDiff {
+  const emptyResult: CollapsedDiff = {
+    diff: fullDiff,
+    folds: [],
+    markerLines: new Map(),
+  };
+
   const lines = fullDiff.split("\n");
 
   // Find header end (before first @@)
@@ -35,21 +52,15 @@ export function collapseDiff(
       break;
     }
   }
-  if (headerEnd < 0) {
-    return { diff: fullDiff, folds: [] };
-  }
+  if (headerEnd < 0) return emptyResult;
 
   // Parse content lines with source line tracking
   const entries = parseEntries(lines, headerEnd);
-  if (entries.length === 0) {
-    return { diff: fullDiff, folds: [] };
-  }
+  if (entries.length === 0) return emptyResult;
 
   // Find foldable context zones
   const zones = findFoldableZones(entries);
-  if (zones.length === 0) {
-    return { diff: fullDiff, folds: [] };
-  }
+  if (zones.length === 0) return emptyResult;
 
   // Build FoldRegion array
   const folds: FoldRegion[] = zones.map((z) => ({
@@ -59,20 +70,46 @@ export function collapseDiff(
     newLineEnd: entries[z.endIdx]!.newNum,
   }));
 
-  // Mark which entries are visible
+  // Mark which entries are visible (supports partial expansion)
   const visible = new Array<boolean>(entries.length).fill(true);
   for (const zone of zones) {
-    if (expanded.has(zone.foldId)) continue;
-    const foldStart = zone.startIdx + CONTEXT_LINES;
+    const revealed = expanded.get(zone.foldId) ?? 0;
+    const hiddenCount = zone.length - CONTEXT_LINES * 2;
+    if (revealed >= hiddenCount) continue; // fully expanded
+    const foldStart = zone.startIdx + CONTEXT_LINES + revealed;
     const foldEnd = zone.endIdx - CONTEXT_LINES;
     for (let i = foldStart; i <= foldEnd; i++) {
       visible[i] = false;
     }
   }
 
-  // Group visible entries into hunks
+  // Precompute marker insertion points (first hidden entry of each fold)
+  const markerAt = new Map<
+    number,
+    { foldId: number; remaining: number; oldNum: number; newNum: number }
+  >();
+  for (const zone of zones) {
+    const revealed = expanded.get(zone.foldId) ?? 0;
+    const hiddenCount = zone.length - CONTEXT_LINES * 2;
+    const remaining = hiddenCount - revealed;
+    if (remaining <= 0) continue;
+    const firstHiddenIdx = zone.startIdx + CONTEXT_LINES + revealed;
+    const entry = entries[firstHiddenIdx];
+    if (entry) {
+      markerAt.set(firstHiddenIdx, {
+        foldId: zone.foldId,
+        remaining,
+        oldNum: entry.oldNum,
+        newNum: entry.newNum,
+      });
+    }
+  }
+
+  // Group visible entries into hunks, inserting fold markers at boundaries
   const header = lines.slice(0, headerEnd);
   const output: string[] = [...header];
+  // Track markers in insertion order for display-line mapping
+  const markerInfos: { foldId: number }[] = [];
 
   let inHunk = false;
   let hunkOldStart = 0;
@@ -81,11 +118,10 @@ export function collapseDiff(
   let hunkNewCount = 0;
   let hunkLines: string[] = [];
 
-  const flushHunk = (annotation: string | null) => {
+  const flushHunk = () => {
     if (!inHunk || hunkLines.length === 0) return;
-    const suffix = annotation ? ` ${annotation}` : "";
     output.push(
-      `@@ -${hunkOldStart},${hunkOldCount} +${hunkNewStart},${hunkNewCount} @@${suffix}`,
+      `@@ -${hunkOldStart},${hunkOldCount} +${hunkNewStart},${hunkNewCount} @@`,
     );
     output.push(...hunkLines);
     inHunk = false;
@@ -101,15 +137,22 @@ export function collapseDiff(
     }
 
     if (!visible[i]) {
-      if (inHunk) {
-        flushHunk(null);
+      // Check if this is the first hidden entry → insert fold marker
+      const info = markerAt.get(i);
+      if (info) {
+        // Flush current hunk before marker
+        flushHunk();
+        // Insert marker as a single-line hunk at the hidden zone's start
+        const markerText = buildMarkerText(info.remaining, contentWidth);
+        output.push(`@@ -${info.oldNum},1 +${info.newNum},1 @@`);
+        output.push(markerText);
+        markerInfos.push({ foldId: info.foldId });
       }
       continue;
     }
 
     // Visible entry
     if (!inHunk) {
-      // Start a new hunk
       inHunk = true;
       hunkOldStart = entry.oldNum;
       hunkNewStart = entry.newNum;
@@ -130,21 +173,12 @@ export function collapseDiff(
     // "no-newline" lines are passed through without counting
   }
 
-  // Find fold annotations for hunks
-  // We need a second pass: identify which hunk headers should carry fold annotations
-  flushHunk(null);
+  flushHunk();
 
-  // Re-scan output to add fold annotations to the correct hunk headers
-  // A hunk that follows a folded zone should carry the "⋯ N lines ⋯" annotation
-  const finalOutput = addFoldAnnotations(
-    output,
-    header.length,
-    zones,
-    entries,
-    expanded,
-  );
+  // Compute display line positions for fold markers
+  const markerLines = computeMarkerDisplayLines(output, markerInfos);
 
-  return { diff: finalOutput.join("\n"), folds };
+  return { diff: output.join("\n"), folds, markerLines };
 }
 
 // ── Internal types ──
@@ -244,54 +278,51 @@ function findFoldableZones(entries: Entry[]): FoldableZone[] {
   return zones;
 }
 
-// ── Fold annotations ──
+// ── Marker helpers ──
 
-function addFoldAnnotations(
+const FILL = "\u2500"; // ─
+
+/** Build a centered fold marker context line padded with ─ to `width`. */
+function buildMarkerText(remaining: number, width: number): string {
+  const core = `${remaining}${FOLD_MARKER_PATTERN}`;
+  // -1 for the leading space (context-line prefix)
+  const inner = Math.max(core.length, width - 1);
+  const pad = inner - core.length;
+  const left = Math.floor(pad / 2);
+  const right = pad - left;
+  return ` ${FILL.repeat(left)} ${core}${FILL.repeat(right)}`;
+}
+
+function computeMarkerDisplayLines(
   outputLines: string[],
-  headerCount: number,
-  zones: FoldableZone[],
-  entries: Entry[],
-  expanded: Set<number>,
-): string[] {
-  // For each folded zone, the hunk header that starts the "bottom context"
-  // should carry the fold annotation. We identify these by matching the
-  // newStart line number of the hunk header with the expected position
-  // after the fold.
-  const annotations = new Map<string, string>(); // hunk-header-key → annotation
+  markerInfos: { foldId: number }[],
+): Map<number, number> {
+  const result = new Map<number, number>();
+  let markerIdx = 0;
+  let displayLine = 0;
+  let inHunk = false;
 
-  for (const zone of zones) {
-    if (expanded.has(zone.foldId)) continue;
-    const hiddenCount = zone.length - CONTEXT_LINES * 2;
-    // The bottom context starts at entries[zone.endIdx - CONTEXT_LINES + 1]
-    const bottomStart = entries[zone.endIdx - CONTEXT_LINES + 1];
-    if (bottomStart) {
-      const key = `${bottomStart.oldNum}:${bottomStart.newNum}`;
-      annotations.set(
-        key,
-        `\u2500\u2500\u2500 ${hiddenCount} lines hidden \u2500 z to expand \u2500\u2500\u2500`,
-      );
-    }
-  }
-
-  if (annotations.size === 0) return outputLines;
-
-  const result: string[] = [];
   for (const line of outputLines) {
-    const hm = line.match(/^@@ -(\d+),(\d+) \+(\d+),(\d+) @@(.*)$/);
-    if (hm) {
-      const oldStart = hm[1]!;
-      const newStart = hm[3]!;
-      const key = `${oldStart}:${newStart}`;
-      const annotation = annotations.get(key);
-      if (annotation) {
-        result.push(
-          `@@ -${oldStart},${hm[2]} +${newStart},${hm[4]} @@ ${annotation}`,
-        );
-        annotations.delete(key);
-        continue;
-      }
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      continue;
     }
-    result.push(line);
+    if (!inHunk || line.length === 0) continue;
+    const ch = line[0];
+    if (ch === "+" || ch === "-" || ch === " ") {
+      displayLine++;
+      if (
+        line.includes(FOLD_MARKER_PATTERN) &&
+        markerIdx < markerInfos.length
+      ) {
+        result.set(displayLine, markerInfos[markerIdx]!.foldId);
+        markerIdx++;
+      }
+    } else if (ch === "\\") {
+      // skip no-newline markers
+    } else {
+      inHunk = false;
+    }
   }
 
   return result;

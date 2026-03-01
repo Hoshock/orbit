@@ -19,6 +19,9 @@ export const COLORS = {
   // Diff
   addition: "green",
   deletion: "red",
+
+  // Fold markers
+  foldMarker: "#2d2d2d",
 } as const;
 
 export const STATUS_ICONS: Record<string, string> = {

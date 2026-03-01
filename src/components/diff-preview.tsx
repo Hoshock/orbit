@@ -11,6 +11,7 @@ interface DiffPreviewProps {
   splitMode: boolean;
   width: number;
   height: number;
+  expandedFolds?: Map<number, number>;
 }
 
 export function DiffPreview({
@@ -18,10 +19,16 @@ export function DiffPreview({
   splitMode,
   width,
   height,
+  expandedFolds,
 }: DiffPreviewProps) {
+  const markerWidth = splitMode ? Math.floor(width / 2) : width;
   const collapsedDiff = useMemo(
-    () => (file ? collapseDiff(file.rawDiff, new Set()).diff : ""),
-    [file?.rawDiff, file],
+    () =>
+      file
+        ? collapseDiff(file.rawDiff, expandedFolds ?? new Map(), markerWidth)
+            .diff
+        : "",
+    [file?.rawDiff, file, expandedFolds, markerWidth],
   );
 
   if (!file) {

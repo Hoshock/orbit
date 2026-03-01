@@ -1,12 +1,12 @@
 # orbit (Offline Review Board In Terminal)
 
 <p align="center">
-  <img src="docs/logo.png" alt="orbit" width="640">
+  <img src="public/logo.png" alt="orbit" width="640">
 </p>
 
 A terminal-based code review tool. Browse git diffs, leave comments on specific lines, then export everything as a prompt you can paste into Claude Code or any other AI tool.
 
-![Demo](docs/demo.gif)
+![Demo](public/demo.gif)
 
 ## Why
 
@@ -18,23 +18,23 @@ The key trick is the prompt export. Your review comments become a structured pro
 
 **Home screen** -- file tree with diff preview
 
-![Home screen](docs/home-screen.png)
+![Home screen](public/home-screen.png)
 
 **Unified view** -- unified diff with syntax highlighting, fold/unfold
 
-![Unified view](docs/unified-view.png)
+![Unified view](public/unified-view.png)
 
 **Split view** -- side-by-side comparison
 
-![Split view](docs/split-view.png)
+![Split view](public/split-view.png)
 
 **Comment** -- add review comments on any line
 
-![Comment](docs/comment.png)
+![Comment](public/comment.png)
 
 **Prompt preview** -- export comments as a structured prompt
 
-![Prompt preview](docs/prompt-preview.png)
+![Prompt preview](public/prompt-preview.png)
 
 ## Install
 
@@ -112,19 +112,19 @@ For commit ranges, select multiple commits with `v` (visual mode) or `shift+up/d
 
 ### Diff view
 
-| Key             | Action                               |
-| --------------- | ------------------------------------ |
-| `Esc/q`         | Back to file list                    |
-| `Up/Down`       | Move by line                         |
-| `Left/Right`    | Switch side (split mode)             |
-| `Shift+Up/Down` | Select range                         |
-| `c`             | Comment on current line or selection |
-| `d`             | Delete comment at cursor             |
-| `e`             | Edit comment at cursor               |
-| `f`             | File-level comment                   |
-| `t`             | Toggle split/unified                 |
-| `v`             | Toggle viewed                        |
-| `z`             | Fold/unfold context                  |
+| Key             | Action                                        |
+| --------------- | --------------------------------------------- |
+| `Esc/q`         | Back to file list                             |
+| `Up/Down`       | Move by line                                  |
+| `Left/Right`    | Switch side (split mode)                      |
+| `Shift+Up/Down` | Select range                                  |
+| `c`             | Comment on current line or selection          |
+| `d`             | Delete comment at cursor                      |
+| `e`             | Edit comment at cursor                        |
+| `f`             | File-level comment                            |
+| `t`             | Toggle split/unified                          |
+| `v`             | Toggle viewed                                 |
+| `z`             | Fold/unfold (incremental, 20 lines at a time) |
 
 ### Comment input
 
