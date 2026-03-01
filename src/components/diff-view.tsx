@@ -100,6 +100,10 @@ export function DiffView({
     // 1. Rebuild to restore native diff colors (red/green for +/- lines)
     if (typeof diff.buildView === "function") {
       diff.buildView();
+      // Cancel any pending requestRebuild microtask queued by prop setters
+      // (in split mode, rebuildView() → requestRebuild() queues a microtask
+      // that would call buildView() again and wipe our custom line colors)
+      if ("pendingRebuild" in diff) diff.pendingRebuild = false;
     }
 
     // In split mode, use leftSide/rightSide (private but runtime-accessible)
@@ -109,6 +113,62 @@ export function DiffView({
 
     // 1.5. Fold marker highlights (lowest custom priority)
     if (markerLines) {
+      // DEBUG: cross-check markerLines against actual diff content
+      const diffLines = file.rawDiff.split("\n");
+      let dbgLine = 0;
+      let dbgInHunk = false;
+      const actualMarkers = new Map<number, string>();
+      for (const line of diffLines) {
+        if (line.startsWith("@@")) {
+          dbgInHunk = true;
+          continue;
+        }
+        if (!dbgInHunk || line.length === 0) continue;
+        const ch = line[0];
+        if (ch === "+" || ch === "-" || ch === " ") {
+          dbgLine++;
+          if (line.includes(" lines hidden (z to expand) ")) {
+            actualMarkers.set(dbgLine, line.slice(0, 60));
+          }
+        } else if (ch === "\\") {
+          /* skip */
+        } else {
+          dbgInHunk = false;
+        }
+      }
+      console.error("[FOLD-DEBUG] markerLines from collapseDiff:", [
+        ...markerLines.entries(),
+      ]);
+      console.error("[FOLD-DEBUG] actual markers in diff string:", [
+        ...actualMarkers.entries(),
+      ]);
+      // Show surrounding lines for each marker position
+      for (const [dispLine] of markerLines) {
+        let scanLine = 0;
+        let scanInHunk = false;
+        for (const line of diffLines) {
+          if (line.startsWith("@@")) {
+            scanInHunk = true;
+            continue;
+          }
+          if (!scanInHunk || line.length === 0) continue;
+          const ch = line[0];
+          if (ch === "+" || ch === "-" || ch === " ") {
+            scanLine++;
+            if (scanLine >= dispLine - 1 && scanLine <= dispLine + 1) {
+              // biome-ignore lint/suspicious/noConsole: temporary debug
+              console.error(
+                `[FOLD-DEBUG] display ${scanLine}: ${line.slice(0, 80)}`,
+              );
+            }
+          } else if (ch === "\\") {
+            /* skip */
+          } else {
+            scanInHunk = false;
+          }
+        }
+      }
+
       for (const [dispLine] of markerLines) {
         if (splitMode) {
           diff.leftSide?.setLineColor(dispLine - 1, COLORS.foldMarker);

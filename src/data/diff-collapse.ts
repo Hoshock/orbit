@@ -108,8 +108,8 @@ export function collapseDiff(
   // Group visible entries into hunks, inserting fold markers at boundaries
   const header = lines.slice(0, headerEnd);
   const output: string[] = [...header];
-  // Track markers in insertion order for display-line mapping
-  const markerInfos: { foldId: number }[] = [];
+  // Track fold IDs in insertion order for display-line mapping
+  const markerFoldIds: number[] = [];
 
   let inHunk = false;
   let hunkOldStart = 0;
@@ -146,7 +146,7 @@ export function collapseDiff(
         const markerText = buildMarkerText(info.remaining, contentWidth);
         output.push(`@@ -${info.oldNum},1 +${info.newNum},1 @@`);
         output.push(markerText);
-        markerInfos.push({ foldId: info.foldId });
+        markerFoldIds.push(info.foldId);
       }
       continue;
     }
@@ -175,10 +175,13 @@ export function collapseDiff(
 
   flushHunk();
 
-  // Compute display line positions for fold markers
-  const markerLines = computeMarkerDisplayLines(output, markerInfos);
+  const diffStr = output.join("\n");
 
-  return { diff: output.join("\n"), folds, markerLines };
+  // Compute display line positions for fold markers from the final diff string
+  // (same input the <diff> element receives, ensuring perfect consistency)
+  const markerLines = computeMarkerDisplayLines(diffStr, markerFoldIds);
+
+  return { diff: diffStr, folds, markerLines };
 }
 
 // ── Internal types ──
@@ -293,16 +296,21 @@ function buildMarkerText(remaining: number, width: number): string {
   return ` ${FILL.repeat(left)} ${core}${FILL.repeat(right)}`;
 }
 
+/**
+ * Compute 1-indexed display line positions for fold markers by scanning
+ * the final diff string — the same input the `<diff>` element receives.
+ * `markerFoldIds` lists fold IDs in the order markers appear in the diff.
+ */
 function computeMarkerDisplayLines(
-  outputLines: string[],
-  markerInfos: { foldId: number }[],
+  diffStr: string,
+  markerFoldIds: number[],
 ): Map<number, number> {
   const result = new Map<number, number>();
   let markerIdx = 0;
   let displayLine = 0;
   let inHunk = false;
 
-  for (const line of outputLines) {
+  for (const line of diffStr.split("\n")) {
     if (line.startsWith("@@")) {
       inHunk = true;
       continue;
@@ -313,9 +321,9 @@ function computeMarkerDisplayLines(
       displayLine++;
       if (
         line.includes(FOLD_MARKER_PATTERN) &&
-        markerIdx < markerInfos.length
+        markerIdx < markerFoldIds.length
       ) {
-        result.set(displayLine, markerInfos[markerIdx]!.foldId);
+        result.set(displayLine, markerFoldIds[markerIdx]!);
         markerIdx++;
       }
     } else if (ch === "\\") {

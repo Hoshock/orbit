@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  displayLineToSourceLine,
   displayLineToSourceLineSplit,
   displayRangeToSourceRange,
   displayRangeToSourceRangeSplit,
@@ -7,9 +8,11 @@ import {
   getDisplayLineCount,
   getLineFromDiff,
   isPureDeletion,
+  markerLinesUnifiedToSplit,
   parseNumstat,
   sourceLineToDisplayLineSplit,
 } from "../data/diff-parser.ts";
+import { collapseDiff } from "../data/diff-collapse.ts";
 
 const SAMPLE_DIFF = `diff --git a/src/main.py b/src/main.py
 index abc1234..def5678 100644
@@ -554,6 +557,64 @@ describe("sourceLineToDisplayLineSplit", () => {
     // Context: old=10 and new=10 both at row 1
     expect(sourceLineToDisplayLineSplit(SAMPLE_DIFF, 10, "old")).toBe(1);
     expect(sourceLineToDisplayLineSplit(SAMPLE_DIFF, 10, "new")).toBe(1);
+  });
+});
+
+describe("markerLinesUnifiedToSplit", () => {
+  it("maps fold marker lines from unified coordinates to split coordinates", () => {
+    const diff = `diff --git a/f b/f
+index 111..222 100644
+--- a/f
++++ b/f
+@@ -1,20 +1,23 @@
+ line1
+-line2_old
++line2_new_a
++line2_new_b
++line2_new_c
++line2_new_d
+ line3
+ line4
+ line5
+ line6
+ line7
+ line8
+ line9
+ line10
+ line11
+ line12
+ line13
+ line14
+ line15
+ line16
+-line17_old
++line17_new
+ line18
+`;
+
+    const collapsed = collapseDiff(diff, new Map(), 80);
+    const splitMarkers = markerLinesUnifiedToSplit(
+      collapsed.diff,
+      collapsed.markerLines,
+    );
+
+    expect(collapsed.markerLines.size).toBe(1);
+    expect(splitMarkers.size).toBe(1);
+
+    const [unifiedLine, foldId] = [...collapsed.markerLines.entries()][0]!;
+    const src = displayLineToSourceLine(collapsed.diff, unifiedLine);
+    const splitMax = getDisplayLineCount(collapsed.diff, true);
+    let expectedSplitLine: number | null = null;
+    for (let d = 1; d <= splitMax; d++) {
+      const splitSrc = displayLineToSourceLineSplit(collapsed.diff, d);
+      if (splitSrc.oldLine === src.oldLine && splitSrc.newLine === src.newLine) {
+        expectedSplitLine = d;
+        break;
+      }
+    }
+
+    expect(expectedSplitLine).not.toBeNull();
+    expect(splitMarkers.get(expectedSplitLine!)).toBe(foldId);
   });
 });
 
