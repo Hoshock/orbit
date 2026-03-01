@@ -1,3 +1,4 @@
+import type { MouseEvent } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useRef } from "react";
 import type { DiffFile, ReviewComment } from "../types.ts";
@@ -62,10 +63,10 @@ export function HomeScreen({
     <box
       flexDirection="row"
       flexGrow={1}
-      onMouseDown={(event: any) => {
+      onMouseDown={(event: MouseEvent) => {
         draggingDividerRef.current = Math.abs(event.x - treeWidth) <= 2;
       }}
-      onMouseDrag={(event: any) => {
+      onMouseDrag={(event: MouseEvent) => {
         if (!draggingDividerRef.current) return;
         const pct = event.x / availableWidth;
         onTreeResize(Math.max(MIN_TREE_PCT, Math.min(MAX_TREE_PCT, pct)));

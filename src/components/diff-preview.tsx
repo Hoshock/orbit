@@ -21,6 +21,13 @@ export function DiffPreview({
   height,
   expandedFolds,
 }: DiffPreviewProps) {
+  const treeSitterClient = useMemo(
+    () =>
+      process.env.ORBIT_DISABLE_TREESITTER === "1"
+        ? undefined
+        : getTreeSitterClient(),
+    [],
+  );
   const markerWidth = splitMode ? Math.floor(width / 2) : width;
   const collapsedDiff = useMemo(
     () =>
@@ -57,7 +64,7 @@ export function DiffPreview({
           width={width}
           syntaxStyle={syntaxStyle}
           filetype={getFiletype(file.path)}
-          treeSitterClient={getTreeSitterClient()}
+          treeSitterClient={treeSitterClient}
         />
       </scrollbox>
     </box>

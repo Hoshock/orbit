@@ -1,5 +1,6 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { COLORS } from "../constants.ts";
+import { syntaxStyle } from "../theme.ts";
 
 interface PromptPreviewProps {
   prompt: string;
@@ -21,7 +22,12 @@ export function PromptPreview({ prompt, commentCount }: PromptPreviewProps) {
 
   return (
     <scrollbox height={height - 2} width={width}>
-      <code content={prompt} filetype="markdown" width={width} />
+      <code
+        content={prompt}
+        filetype="markdown"
+        syntaxStyle={syntaxStyle}
+        width={width}
+      />
     </scrollbox>
   );
 }

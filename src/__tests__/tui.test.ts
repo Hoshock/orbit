@@ -1,7 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
 import { setMaxListeners } from "node:events";
+import { DiffRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createElement, useMemo, useState } from "react";
+import { App } from "../app.tsx";
 import { CommentList } from "../components/comment-list.tsx";
 import { DiffView } from "../components/diff-view.tsx";
 import { FileTree } from "../components/file-tree.tsx";
@@ -9,10 +11,12 @@ import { Header } from "../components/header.tsx";
 import { HelpBar } from "../components/help-bar.tsx";
 import { HomeScreen } from "../components/home-screen.tsx";
 import { PromptPreview } from "../components/prompt-preview.tsx";
+import { commentStore } from "../data/comment-store.ts";
 import type { DiffFile, ReviewComment } from "../types.ts";
 import { buildFileTree, flattenTree } from "../utils/file-tree.ts";
 
 const RENDER_OPTS = { width: 80, height: 24 };
+process.env.ORBIT_DISABLE_TREESITTER = "1";
 setMaxListeners(50);
 
 function makeFile(overrides: Partial<DiffFile> = {}): DiffFile {
@@ -49,6 +53,53 @@ function makeComment(overrides: Partial<ReviewComment> = {}): ReviewComment {
     resolved: false,
     ...overrides,
   };
+}
+
+function makeFoldHeavyDiff(): string {
+  const header = [
+    "diff --git a/file.ts b/file.ts",
+    "index abc..def 100644",
+    "--- a/file.ts",
+    "+++ b/file.ts",
+  ].join("\n");
+  const ctx = Array.from({ length: 40 }, (_, i) => ` line${5 + i}`).join("\n");
+  const hunk =
+    "@@ -1,46 +1,46 @@\n" +
+    " line1\n line2\n line3\n" +
+    "-old1\n+new1\n" +
+    `${ctx}\n` +
+    "-old2\n+new2\n" +
+    " line45\n line46\n line47";
+  return `${header}\n${hunk}`;
+}
+
+function findDiffRenderable(root: {
+  getChildren: () => unknown[];
+}): (DiffRenderable & { buildView: (...args: unknown[]) => unknown }) | null {
+  const stack: unknown[] = [root];
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+    if (cur instanceof DiffRenderable) {
+      const withBuild = cur as DiffRenderable & {
+        buildView?: (...args: unknown[]) => unknown;
+      };
+      if (typeof withBuild.buildView === "function") {
+        return withBuild as DiffRenderable & {
+          buildView: (...args: unknown[]) => unknown;
+        };
+      }
+      continue;
+    }
+    if (
+      "getChildren" in cur &&
+      typeof (cur as { getChildren?: unknown }).getChildren === "function"
+    ) {
+      const children = (cur as { getChildren: () => unknown[] }).getChildren();
+      for (const child of children) stack.push(child);
+    }
+  }
+  return null;
 }
 
 // ── Header ──
@@ -285,6 +336,85 @@ describe("HomeScreen component", () => {
     const frame = captureCharFrame();
     expect(frame).toContain("src/main.py");
     expect(frame).toContain("+10/-5");
+  });
+});
+
+// ── App integration ──
+describe("App integration", () => {
+  it("keeps keyboard scrolling smooth after unfold (no extra buildView per arrow)", async () => {
+    commentStore.reset();
+    let mountedRenderer: { destroy: () => void } | null = null;
+    let patchedDiff: { buildView: (...args: unknown[]) => unknown } | null =
+      null;
+    let originalBuildView: ((...args: unknown[]) => unknown) | null = null;
+    let buildViewCalls = 0;
+
+    try {
+      const files: DiffFile[] = [
+        makeFile({
+          path: "file.ts",
+          rawDiff: makeFoldHeavyDiff(),
+          additions: 2,
+          deletions: 2,
+        }),
+      ];
+
+      const { captureCharFrame, mockInput, renderOnce, renderer } =
+        await testRender(
+          createElement(App, {
+            files,
+            options: {
+              base: "HEAD~1",
+              target: "HEAD",
+              splitMode: false,
+              root: false,
+            },
+            onQuit: () => {},
+          }),
+          RENDER_OPTS,
+        );
+      mountedRenderer = renderer;
+
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressEnter();
+        await renderOnce();
+      });
+      expect(captureCharFrame()).toContain("lines hidden");
+      const diffNode = findDiffRenderable(renderer.root);
+      expect(diffNode).not.toBeNull();
+      if (!diffNode) return;
+      patchedDiff = diffNode;
+      originalBuildView = diffNode.buildView;
+      patchedDiff.buildView = (...args: unknown[]) => {
+        buildViewCalls++;
+        return originalBuildView?.apply(patchedDiff, args);
+      };
+
+      await act(async () => {
+        mockInput.pressKey("z");
+        await renderOnce();
+      });
+      const callsAfterUnfold = buildViewCalls;
+      expect(callsAfterUnfold).toBeGreaterThan(0);
+
+      await act(async () => {
+        for (let i = 0; i < 8; i++) {
+          mockInput.pressArrow("down");
+          await renderOnce();
+        }
+      });
+      expect(buildViewCalls).toBe(callsAfterUnfold);
+    } finally {
+      if (mountedRenderer) {
+        await act(async () => {
+          mountedRenderer?.destroy();
+        });
+      }
+      if (patchedDiff && originalBuildView) {
+        patchedDiff.buildView = originalBuildView;
+      }
+    }
   });
 });
 

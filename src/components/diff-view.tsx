@@ -1,4 +1,9 @@
-import { getTreeSitterClient } from "@opentui/core";
+import {
+  type DiffRenderable,
+  getTreeSitterClient,
+  type MouseEvent,
+  type ScrollBoxRenderable,
+} from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { COLORS } from "../constants.ts";
@@ -25,6 +30,18 @@ interface DiffViewProps {
   onCursorChange?: (line: number) => void;
 }
 
+type LineColorTarget = {
+  setLineColor: (line: number, color: string) => void;
+  clearLineColor: (line: number) => void;
+};
+
+type DiffRuntime = DiffRenderable & {
+  buildView?: () => void;
+  pendingRebuild?: boolean;
+  leftSide?: LineColorTarget;
+  rightSide?: LineColorTarget;
+};
+
 export function DiffView({
   file,
   cursorLine,
@@ -37,8 +54,15 @@ export function DiffView({
   onCursorChange,
 }: DiffViewProps) {
   const { width, height } = useTerminalDimensions();
-  const diffRef = useRef<any>(null);
-  const scrollRef = useRef<any>(null);
+  const diffRef = useRef<DiffRuntime | null>(null);
+  const scrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const treeSitterClient = useMemo(
+    () =>
+      process.env.ORBIT_DISABLE_TREESITTER === "1"
+        ? undefined
+        : getTreeSitterClient(),
+    [],
+  );
   // Track scroll position in a ref to avoid relying on scrollbox's internal
   // scrollTop which can get reset/clamped when the scrollbox height changes
   // (e.g. comment-input half-height → diff-view full-height transition).
@@ -265,7 +289,7 @@ export function DiffView({
         ref={scrollRef}
         height={diffHeight}
         width={width}
-        onMouseDown={(event: any) => {
+        onMouseDown={(event: MouseEvent) => {
           if (!onCursorChange) return;
           const line = scrollTopRef.current + event.y + 1;
           onCursorChange(Math.max(1, line));
@@ -279,7 +303,7 @@ export function DiffView({
           width={width}
           syntaxStyle={syntaxStyle}
           filetype={getFiletype(file.path)}
-          treeSitterClient={getTreeSitterClient()}
+          treeSitterClient={treeSitterClient}
         />
       </scrollbox>
       {currentComments.length > 0 ? (

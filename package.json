@@ -1,8 +1,37 @@
 {
-  "name": "orbit",
+  "name": "@hoshock/orbit",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Terminal-based code review tool with AI prompt export",
   "module": "src/index.tsx",
   "type": "module",
-  "private": true,
+  "bin": {
+    "orbit": "./bin/orbit"
+  },
+  "files": [
+    "src",
+    "bin",
+    "assets",
+    "LICENSE",
+    "README.md"
+  ],
+  "keywords": [
+    "cli",
+    "code-review",
+    "diff",
+    "terminal",
+    "tui",
+    "git"
+  ],
+  "author": "Tsuyoshi ISHIDA",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hoshock/orbit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Hoshock/orbit/issues"
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.4.2",
     "@types/bun": "latest",
