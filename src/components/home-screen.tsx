@@ -17,6 +17,7 @@ interface HomeScreenProps {
   collapsedDirs: Set<string>;
   previewSplitMode: boolean;
   treePercent: number;
+  expandedFolds: Map<string, Map<number, number>>;
   onTreeResize: (percent: number) => void;
   onSelectRow: (index: number) => void;
   onOpenFile: (index: number) => void;
@@ -30,6 +31,7 @@ export function HomeScreen({
   collapsedDirs,
   previewSplitMode,
   treePercent,
+  expandedFolds,
   onTreeResize,
   onSelectRow,
   onOpenFile,
@@ -93,6 +95,9 @@ export function HomeScreen({
         splitMode={previewSplitMode}
         width={previewWidth}
         height={panelHeight}
+        expandedFolds={
+          previewFile ? expandedFolds.get(previewFile.path) : undefined
+        }
       />
     </box>
   );

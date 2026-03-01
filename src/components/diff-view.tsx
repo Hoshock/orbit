@@ -20,6 +20,7 @@ interface DiffViewProps {
   splitMode: boolean;
   activeSide?: "old" | "new";
   selectionRange?: { start: number; end: number } | null;
+  markerLines?: Map<number, number>;
   maxHeight?: number;
   onCursorChange?: (line: number) => void;
 }
@@ -31,6 +32,7 @@ export function DiffView({
   splitMode,
   activeSide = "new",
   selectionRange,
+  markerLines,
   maxHeight,
   onCursorChange,
 }: DiffViewProps) {
@@ -105,6 +107,18 @@ export function DiffView({
     const getSideTarget = (side: "old" | "new") =>
       side === "old" ? diff.leftSide : diff.rightSide;
 
+    // 1.5. Fold marker highlights (lowest custom priority)
+    if (markerLines) {
+      for (const [dispLine] of markerLines) {
+        if (splitMode) {
+          diff.leftSide?.setLineColor(dispLine - 1, COLORS.foldMarker);
+          diff.rightSide?.setLineColor(dispLine - 1, COLORS.foldMarker);
+        } else {
+          diff.setLineColor(dispLine - 1, COLORS.foldMarker);
+        }
+      }
+    }
+
     // 2. Comment highlights (lower priority, applied first)
     // position.line is a source line; convert to display line for setLineColor (0-indexed)
     const toDispLine = splitMode
@@ -168,6 +182,7 @@ export function DiffView({
     splitMode,
     activeSide,
     file.rawDiff,
+    markerLines,
   ]);
 
   return (

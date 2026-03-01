@@ -46,7 +46,10 @@ Flags: `--staged`, `--root`, `--split` / `--mode=split`, `-h` / `--help`
 - Home screen split: `availableWidth = width - dividerWidth`, drag restricted to divider area via `draggingDividerRef`
 - `Bun.spawnSync` for git operations (no async shell, no user input in commands)
 - Comment mode disables app-level keyboard (textarea owns input)
-- Fold/unfold via `collapseDiff()` — pure function, no side effects
+- Fold/unfold via `collapseDiff()` — pure function returning `{ diff, folds, markerLines }`
+- Fold state: `Map<number, number>` (foldId → revealedLines) for incremental unfold (20 lines/chunk)
+- Fold markers: centered `─` context lines inserted as single-line hunks, detected via `FOLD_MARKER_PATTERN`
+- z key handler computes new diff + cursor position inline (no useEffect) to avoid scroll jitter
 - Colors and icons centralized in `constants.ts`
 
 ## Modes
