@@ -51,11 +51,12 @@ Make sure `~/.local/bin` is in your `PATH`.
 
 ```sh
 orbit                     # unstaged changes (git diff)
-orbit staged              # staged changes (git diff --staged)
-orbit HEAD                # last commit
+orbit --staged            # staged changes (git diff --staged)
+orbit HEAD                # last commit (HEAD~1..HEAD)
 orbit HEAD~3..HEAD        # commit range
 orbit feature main        # branch comparison
 orbit --split             # side-by-side view
+orbit --root SHA~1..SHA   # diff against empty tree if base is unresolvable
 ```
 
 ## Lazygit integration
@@ -76,7 +77,7 @@ customCommands:
     output: terminal
   - key: "o"
     description: "Review commit(s)"
-    command: "orbit {{.SelectedCommitRange.From}}~1..{{.SelectedCommitRange.To}}"
+    command: "orbit --root {{.SelectedCommitRange.From}}~1..{{.SelectedCommitRange.To}}"
     context: "commits"
     output: terminal
 ```
@@ -89,7 +90,7 @@ Press `o` in any of these panels to open orbit:
 | Branches | Diff between selected branch and current branch    |
 | Commits  | Selected commit, or range if multiple are selected |
 
-For commit ranges, select multiple commits with `v` (visual mode) or `shift+up/down` in lazygit, then press `o`. The `~1` in the command ensures the first selected commit is included in the diff.
+For commit ranges, select multiple commits with `v` (visual mode) or `shift+up/down` in lazygit, then press `o`. The `~1` ensures the first selected commit is included in the diff. The `--root` flag handles the case where the selection includes the initial commit by diffing against an empty tree.
 
 ## Keybindings
 

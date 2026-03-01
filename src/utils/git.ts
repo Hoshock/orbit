@@ -26,3 +26,16 @@ export function resolveShortHash(ref: string, cwd?: string): string {
     return ref;
   }
 }
+
+/** Check if a git ref can be resolved. */
+export function refExists(ref: string, cwd?: string): boolean {
+  const result = Bun.spawnSync(["git", "rev-parse", "--verify", ref], {
+    cwd: cwd ?? process.cwd(),
+  });
+  return result.exitCode === 0;
+}
+
+/** Get the hash of an empty tree object (for diffing root commits). */
+export function getEmptyTreeHash(cwd?: string): string {
+  return runGit(["hash-object", "-t", "tree", "/dev/null"], cwd).trim();
+}
