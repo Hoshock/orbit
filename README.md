@@ -38,7 +38,7 @@ The key trick is the prompt export. Your review comments become a structured pro
 
 ## Install
 
-Requires [Bun](https://bun.sh) v1.2+.
+Requires [Bun](https://github.com/oven-sh/bun) v1.2+.
 
 ```sh
 git clone https://github.com/Hoshock/orbit.git
@@ -179,10 +179,10 @@ The hash is derived from the diff range (e.g., `HEAD~1..HEAD`), so different ran
 
 ## Stack
 
-- [Bun](https://bun.sh) - runtime and test runner
-- [OpenTUI](https://github.com/anthropics/opentui) - terminal UI framework (React-based)
-- [React](https://react.dev) - component model
-- [Biome](https://biomejs.dev) - linter and formatter
+- [Bun](https://github.com/oven-sh/bun) - runtime and test runner
+- [OpenTUI](https://github.com/anomalyco/opentui) - terminal UI framework (React-based)
+- [React](https://github.com/facebook/react) - component model
+- [Biome](https://github.com/biomejs/biome) - linter and formatter
 
 ## Development
 
@@ -195,7 +195,7 @@ bun run lint              # auto-fix lint issues
 
 ## Syntax highlighting
 
-orbit uses [tree-sitter](https://tree-sitter.github.io/) for syntax highlighting. The following languages are currently supported:
+orbit uses [tree-sitter](https://github.com/tree-sitter/tree-sitter) for syntax highlighting. The following languages are currently supported:
 
 | Language   | Source                                         |
 | ---------- | ---------------------------------------------- |
