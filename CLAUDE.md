@@ -46,7 +46,7 @@ src/
   cli/
     args.ts          CLI argument parsing
   components/
-    home-screen.tsx  File tree + diff preview (resizable split)
+    home-screen.tsx  File tree + diff preview (resizable split via [ key and mouse drag)
     file-tree.tsx    File tree with directory collapsing
     file-list.tsx    Flat file list (legacy)
     diff-view.tsx    Full diff viewer with cursor/comments

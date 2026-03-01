@@ -63,6 +63,7 @@ export function App({ files, options }: AppProps) {
   const [treeIndex, setTreeIndex] = useState(0);
   const [previewSplitMode, setPreviewSplitMode] = useState(options.splitMode);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
+  const [treePercent, setTreePercent] = useState(0.2);
 
   // Fold/unfold state: file path → expanded fold IDs
   const [expandedFolds, setExpandedFolds] = useState<Map<string, Set<number>>>(
@@ -314,6 +315,15 @@ export function App({ files, options }: AppProps) {
         case "p":
           setMode("prompt-preview");
           return;
+      }
+      // [ / ] to resize tree panel (10% steps, min 10% max 50%)
+      if (key.raw === "[") {
+        setTreePercent((p) => Math.max(0.1, Math.round((p - 0.1) * 10) / 10));
+        return;
+      }
+      if (key.raw === "]") {
+        setTreePercent((p) => Math.min(0.5, Math.round((p + 0.1) * 10) / 10));
+        return;
       }
       return;
     }
@@ -672,6 +682,8 @@ export function App({ files, options }: AppProps) {
           viewedFiles={viewedFiles}
           collapsedDirs={collapsedDirs}
           previewSplitMode={previewSplitMode}
+          treePercent={treePercent}
+          onTreeResize={setTreePercent}
           onSelectRow={(i) => setTreeIndex(i)}
           onOpenFile={(rowIdx) => {
             const row = flatRows[rowIdx];

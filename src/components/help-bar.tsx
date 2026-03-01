@@ -22,8 +22,8 @@ export function HelpBar({ mode, flash, splitMode }: HelpBarProps) {
   let helpText: string;
   if (mode === "file-list") {
     helpText = splitMode
-      ? "Esc/q:quit  \u2191\u2193:move  \u2190\u2192:open/close  Enter:diff  c:comments  p:prompt  t:unified"
-      : "Esc/q:quit  \u2191\u2193:move  \u2190\u2192:open/close  Enter:diff  c:comments  p:prompt  t:split";
+      ? "Esc/q:quit  \u2191\u2193:move  \u2190\u2192:open/close  []:resize  Enter:diff  c:comments  p:prompt  t:unified"
+      : "Esc/q:quit  \u2191\u2193:move  \u2190\u2192:open/close  []:resize  Enter:diff  c:comments  p:prompt  t:split";
   } else if (mode === "diff-view") {
     helpText = splitMode
       ? "Esc/q:back  \u2191\u2193:line  \u2190\u2192:side  Shift+\u2191\u2193:select  c:comment  d:delete  e:edit  f:file  t:unified  z:fold"

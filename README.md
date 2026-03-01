@@ -95,15 +95,16 @@ For commit ranges, select multiple commits with `v` (visual mode) or `shift+up/d
 
 ### File list
 
-| Key          | Action                        |
-| ------------ | ----------------------------- |
-| `q/Esc`      | Quit                          |
-| `Up/Down`    | Move cursor                   |
-| `Left/Right` | Collapse/expand directory     |
-| `Enter`      | Open diff or toggle directory |
-| `c`          | Comment list                  |
-| `p`          | Prompt preview                |
-| `t`          | Toggle split/unified          |
+| Key          | Action                           |
+| ------------ | -------------------------------- |
+| `Esc/q`      | Quit                             |
+| `Up/Down`    | Move cursor                      |
+| `Left/Right` | Collapse/expand directory        |
+| `[/]`        | Shrink/grow tree panel (10%-50%) |
+| `Enter`      | Open diff or toggle directory    |
+| `c`          | Comment list                     |
+| `p`          | Prompt preview                   |
+| `t`          | Toggle split/unified             |
 
 ### Diff view
 

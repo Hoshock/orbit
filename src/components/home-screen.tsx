@@ -1,9 +1,12 @@
 import { useTerminalDimensions } from "@opentui/react";
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import type { DiffFile, ReviewComment } from "../types.ts";
 import type { FlatTreeRow } from "../utils/file-tree.ts";
 import { DiffPreview } from "./diff-preview.tsx";
 import { FileTree } from "./file-tree.tsx";
+
+const MIN_TREE_PCT = 0.1;
+const MAX_TREE_PCT = 0.5;
 
 interface HomeScreenProps {
   files: DiffFile[];
@@ -13,6 +16,8 @@ interface HomeScreenProps {
   viewedFiles: Set<string>;
   collapsedDirs: Set<string>;
   previewSplitMode: boolean;
+  treePercent: number;
+  onTreeResize: (percent: number) => void;
   onSelectRow: (index: number) => void;
   onOpenFile: (index: number) => void;
 }
@@ -24,14 +29,13 @@ export function HomeScreen({
   viewedFiles,
   collapsedDirs,
   previewSplitMode,
+  treePercent,
+  onTreeResize,
   onSelectRow,
   onOpenFile,
 }: HomeScreenProps) {
   const { width, height } = useTerminalDimensions();
   const panelHeight = height - 2; // header + help bar
-
-  const [treePercent, setTreePercent] = useState(0.35);
-  const draggingRef = useRef(false);
 
   const treeWidth = Math.max(Math.floor(width * treePercent), 20);
   const dividerWidth = 1;
@@ -45,7 +49,14 @@ export function HomeScreen({
   const previewFile = selectedFile ?? lastFileRef.current;
 
   return (
-    <box flexDirection="row" flexGrow={1}>
+    <box
+      flexDirection="row"
+      flexGrow={1}
+      onMouseDrag={(event: any) => {
+        const pct = event.x / width;
+        onTreeResize(Math.max(MIN_TREE_PCT, Math.min(MAX_TREE_PCT, pct)));
+      }}
+    >
       <FileTree
         rows={rows}
         selectedIndex={selectedIndex}
@@ -57,22 +68,7 @@ export function HomeScreen({
         onSelectRow={onSelectRow}
         onOpenFile={onOpenFile}
       />
-      <box
-        width={dividerWidth}
-        height={panelHeight}
-        onMouseDown={() => {
-          draggingRef.current = true;
-        }}
-        onMouseDrag={(event: any) => {
-          if (!draggingRef.current) return;
-          const absX = treeWidth + event.x;
-          const pct = absX / width;
-          setTreePercent(Math.max(0.15, Math.min(0.7, pct)));
-        }}
-        onMouseDragEnd={() => {
-          draggingRef.current = false;
-        }}
-      >
+      <box width={dividerWidth} height={panelHeight}>
         <text color="gray" height={panelHeight} width={dividerWidth}>
           {"\u2502".repeat(panelHeight)}
         </text>
