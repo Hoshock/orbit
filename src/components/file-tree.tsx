@@ -1,5 +1,6 @@
+import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { COLORS, STATUS_ICONS } from "../constants.ts";
+import { COLORS } from "../constants.ts";
 import type { ReviewComment } from "../types.ts";
 import type { FlatTreeRow } from "../utils/file-tree.ts";
 
@@ -13,6 +14,92 @@ interface FileTreeProps {
   height: number;
   onSelectRow: (index: number) => void;
   onOpenFile: (index: number) => void;
+}
+
+type Segment = { text: string; color?: string };
+
+/** Slice segments into a viewport window [scrollLeft, scrollLeft+width). */
+function sliceSegments(
+  segments: Segment[],
+  scrollLeft: number,
+  maxWidth: number,
+): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let pos = 0;
+  let remaining = maxWidth;
+
+  for (let i = 0; i < segments.length; i++) {
+    if (remaining <= 0) break;
+    const seg = segments[i];
+    const segEnd = pos + seg.text.length;
+
+    if (segEnd <= scrollLeft) {
+      pos = segEnd;
+      continue;
+    }
+
+    const visibleStart = Math.max(0, scrollLeft - pos);
+    const visibleText = seg.text.slice(visibleStart, visibleStart + remaining);
+
+    if (visibleText.length > 0) {
+      if (seg.color) {
+        nodes.push(
+          <span key={i} fg={seg.color}>
+            {visibleText}
+          </span>,
+        );
+      } else {
+        nodes.push(visibleText);
+      }
+      remaining -= visibleText.length;
+    }
+    pos = segEnd;
+  }
+
+  return nodes;
+}
+
+/** Build segments for a row (with color info). */
+function rowSegments(
+  row: FlatTreeRow,
+  collapsedDirs: Set<string>,
+  commentCounts: Map<string, number>,
+  viewedFiles: Set<string>,
+): Segment[] {
+  const { node } = row;
+  const indent = "  ".repeat(node.depth);
+  const name = node.isDir ? `${node.name}/` : node.name;
+
+  if (!node.file) {
+    const dirIcon = collapsedDirs.has(node.path) ? "\u25B8 " : "\u25BE ";
+    return [{ text: `${indent}${dirIcon}${name}` }];
+  }
+
+  const viewed = viewedFiles.has(node.file.path);
+  const check = viewed ? "\u2713 " : "  ";
+  const segments: Segment[] = [
+    { text: `${indent}`, color: viewed ? COLORS.comment : undefined },
+    { text: check, color: viewed ? COLORS.comment : undefined },
+    {
+      text: `${name}  `,
+      color: viewed ? COLORS.comment : undefined,
+    },
+    { text: `+${node.file.additions}`, color: COLORS.addition },
+    { text: " " },
+    { text: `-${node.file.deletions}`, color: COLORS.deletion },
+  ];
+  const count = commentCounts.get(node.file.path) ?? 0;
+  if (count > 0) {
+    segments.push({ text: `  ${count}`, color: COLORS.comment });
+  }
+  return segments;
+}
+
+/** Total character length of segments. */
+function segmentsLength(segments: Segment[]): number {
+  let len = 0;
+  for (const s of segments) len += s.text.length;
+  return len;
 }
 
 export function FileTree({
@@ -51,8 +138,20 @@ export function FileTree({
     commentCounts.set(c.filePath, (commentCounts.get(c.filePath) ?? 0) + 1);
   }
 
-  // Viewport scrolling: only scroll when cursor leaves visible area
+  // Max content width → determines if horizontal scroll is needed
+  let maxContentWidth = 0;
+  for (const row of rows) {
+    const len = segmentsLength(
+      rowSegments(row, collapsedDirs, commentCounts, viewedFiles),
+    );
+    if (len > maxContentWidth) maxContentWidth = len;
+  }
+  const maxScrollLeft = Math.max(0, maxContentWidth - width);
+
   const [scrollTop, setScrollTop] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
+  const effectiveScrollLeft = Math.min(scrollLeft, maxScrollLeft);
+
   useEffect(() => {
     setScrollTop((prev) => {
       if (selectedIndex < prev) return selectedIndex;
@@ -61,83 +160,84 @@ export function FileTree({
     });
   }, [selectedIndex, height]);
 
+  const handleMouseScroll = useCallback(
+    (event: any) => {
+      const dir = event.scroll?.direction;
+      const delta = event.scroll?.delta ?? 1;
+      if (dir === "up") {
+        setScrollTop((prev) => Math.max(0, prev - delta));
+      } else if (dir === "down") {
+        setScrollTop((prev) =>
+          Math.min(Math.max(0, rows.length - height), prev + delta),
+        );
+      } else if (dir === "left" && maxScrollLeft > 0) {
+        setScrollLeft((prev) => Math.max(0, prev - delta));
+      } else if (dir === "right" && maxScrollLeft > 0) {
+        setScrollLeft((prev) => Math.min(maxScrollLeft, prev + delta));
+      }
+    },
+    [rows.length, height, maxScrollLeft],
+  );
+
   const startIdx = Math.max(0, Math.min(scrollTop, rows.length - height));
   const visibleRows = rows.slice(startIdx, startIdx + height);
 
+  const handleRowMouseDown = useCallback(
+    (realIdx: number) => () => {
+      handleRowClick(realIdx);
+    },
+    [handleRowClick],
+  );
+
   return (
-    <box flexDirection="column" width={width} height={height}>
+    <box
+      flexDirection="column"
+      width={width}
+      height={height}
+      onMouseScroll={handleMouseScroll}
+    >
       {visibleRows.map((row, i) => {
         const realIdx = startIdx + i;
         const isSelected = realIdx === selectedIndex;
-        const { node } = row;
-
-        const indent = "  ".repeat(node.depth);
-        const icon = node.isDir
-          ? collapsedDirs.has(node.path)
-            ? "\u25B8 " // ▸ collapsed
-            : "\u25BE " // ▾ expanded
-          : `${STATUS_ICONS[node.file?.status ?? ""] ?? " "} `;
-
-        const name = node.isDir ? `${node.name}/` : node.name;
-
-        // Stats for files only
-        let suffix = "";
-        if (node.file) {
-          suffix += `  +${node.file.additions} -${node.file.deletions}`;
-          const count = commentCounts.get(node.file.path) ?? 0;
-          if (count > 0) suffix += `  ${count}`;
-          if (viewedFiles.has(node.file.path)) suffix += " \u2713";
-        }
-
-        const line = `${indent}${icon}${name}`;
+        const segs = rowSegments(
+          row,
+          collapsedDirs,
+          commentCounts,
+          viewedFiles,
+        );
+        const children = sliceSegments(segs, effectiveScrollLeft, width);
 
         if (isSelected) {
-          const content = `${line}${suffix}`;
-          const padded =
-            content.length < width
-              ? content + " ".repeat(width - content.length)
-              : content;
+          // Pad to full width for highlight background
+          const visibleLen = Math.min(
+            segmentsLength(segs) - effectiveScrollLeft,
+            width,
+          );
+          const pad = Math.max(0, width - visibleLen);
           return (
             <text
-              key={node.path}
+              key={row.node.path}
               width={width}
+              selectable={false}
               bg={COLORS.selected}
               color="white"
               bold
-              onMouseDown={() => handleRowClick(realIdx)}
+              onMouseDown={handleRowMouseDown(realIdx)}
             >
-              {padded}
-            </text>
-          );
-        }
-
-        if (node.isDir) {
-          return (
-            <text
-              key={node.path}
-              width={width}
-              onMouseDown={() => handleRowClick(realIdx)}
-            >
-              {line}
+              {children}
+              {pad > 0 ? " ".repeat(pad) : null}
             </text>
           );
         }
 
         return (
           <text
-            key={node.path}
+            key={row.node.path}
             width={width}
-            onMouseDown={() => handleRowClick(realIdx)}
+            selectable={false}
+            onMouseDown={handleRowMouseDown(realIdx)}
           >
-            {`${line}  `}
-            <span fg={COLORS.addition}>{`+${node.file!.additions}`}</span>{" "}
-            <span fg={COLORS.deletion}>{`-${node.file!.deletions}`}</span>
-            {(commentCounts.get(node.file!.path) ?? 0) > 0 ? (
-              <span fg={COLORS.comment}>
-                {`  ${commentCounts.get(node.file!.path)}`}
-              </span>
-            ) : null}
-            {viewedFiles.has(node.file!.path) ? " \u2713" : ""}
+            {children}
           </text>
         );
       })}

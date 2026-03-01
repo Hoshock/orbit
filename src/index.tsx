@@ -13,7 +13,14 @@ import pythonWasm from "../assets/tree-sitter/python/tree-sitter-python.wasm" wi
 };
 import { App } from "./app.tsx";
 import { buildDiffArgs, parseArgs } from "./cli/args.ts";
-import { getCachePath, loadComments } from "./data/comment-cache.ts";
+import {
+  getCachePath,
+  getPrefsCachePath,
+  getViewedCachePath,
+  loadComments,
+  loadPrefs,
+  loadViewedFiles,
+} from "./data/comment-cache.ts";
 import { commentStore } from "./data/comment-store.ts";
 import { parseDiffFiles } from "./data/diff-parser.ts";
 import {
@@ -124,13 +131,38 @@ async function main() {
   }
   commentStore.setCachePath(cachePath);
 
+  // Restore cached viewed files
+  const viewedCachePath = getViewedCachePath(
+    repoRoot,
+    options.base,
+    options.target,
+  );
+  const cachedViewed = loadViewedFiles(viewedCachePath);
+
+  // Restore cached preferences (tree width, etc.)
+  const prefsCachePath = getPrefsCachePath(
+    repoRoot,
+    options.base,
+    options.target,
+  );
+  const cachedPrefs = loadPrefs(prefsCachePath);
+
   renderer = await createCliRenderer({
     exitOnCtrlC: true,
     useAlternateScreen: true,
     useMouse: true,
   });
 
-  createRoot(renderer).render(<App files={files} options={options} />);
+  createRoot(renderer).render(
+    <App
+      files={files}
+      options={options}
+      initialViewedFiles={cachedViewed}
+      viewedCachePath={viewedCachePath}
+      initialPrefs={cachedPrefs}
+      prefsCachePath={prefsCachePath}
+    />,
+  );
 }
 
 main().catch((err) => {

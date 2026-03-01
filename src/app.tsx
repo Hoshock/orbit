@@ -1,4 +1,8 @@
-import { useKeyboard, useTerminalDimensions } from "@opentui/react";
+import {
+  useKeyboard,
+  useRenderer,
+  useTerminalDimensions,
+} from "@opentui/react";
 import {
   useCallback,
   useEffect,
@@ -15,6 +19,7 @@ import { Header } from "./components/header.tsx";
 import { HelpBar } from "./components/help-bar.tsx";
 import { HomeScreen } from "./components/home-screen.tsx";
 import { PromptPreview } from "./components/prompt-preview.tsx";
+import { savePrefs, saveViewedFiles } from "./data/comment-cache.ts";
 import { commentStore } from "./data/comment-store.ts";
 import { collapseDiff } from "./data/diff-collapse.ts";
 import {
@@ -36,10 +41,61 @@ import { buildFileTree, flattenTree } from "./utils/file-tree.ts";
 interface AppProps {
   files: DiffFile[];
   options: CliOptions;
+  initialViewedFiles?: Set<string>;
+  viewedCachePath?: string;
+  initialPrefs?: Record<string, unknown>;
+  prefsCachePath?: string;
 }
 
-export function App({ files, options }: AppProps) {
+export function App({
+  files,
+  options,
+  initialViewedFiles,
+  viewedCachePath,
+  initialPrefs,
+  prefsCachePath,
+}: AppProps) {
   const { width, height } = useTerminalDimensions();
+  const renderer = useRenderer();
+
+  // Recover from terminal focus changes (e.g. cmux/tmux workspace switch).
+  //
+  // OpenTUI's stdinListener processes mouse data BEFORE input handlers.
+  // If a focus-in sequence (\x1b[I) arrives in the same data chunk as mouse
+  // data, handleMouseData() consumes the entire chunk and the focus event is
+  // lost.  We intercept stdin BEFORE OpenTUI (via prependListener) to
+  // reliably detect focus-in, then defer the actual reset to avoid
+  // re-entrant issues with the render loop.
+  useEffect(() => {
+    let pending = false;
+    const resetMouseState = () => {
+      if (pending) return;
+      pending = true;
+      setImmediate(() => {
+        pending = false;
+        const r = renderer as any;
+        r.setCapturedRenderable?.(undefined);
+        r.mouseParser?.reset?.();
+        if (renderer.hasSelection) renderer.clearSelection();
+        renderer.currentRenderBuffer.clear();
+        renderer.intermediateRender();
+      });
+    };
+
+    const onStdin = (data: Buffer) => {
+      if (data.toString().includes("\x1b[I")) {
+        resetMouseState();
+      }
+    };
+    process.stdin.prependListener("data", onStdin);
+    renderer.on("focus", resetMouseState);
+
+    return () => {
+      process.stdin.removeListener("data", onStdin);
+      renderer.off("focus", resetMouseState);
+    };
+  }, [renderer]);
+
   const comments = useSyncExternalStore(
     commentStore.subscribe,
     commentStore.getSnapshot,
@@ -50,7 +106,9 @@ export function App({ files, options }: AppProps) {
   const [cursorLine, setCursorLine] = useState(1);
   const [commentIndex, setCommentIndex] = useState(0);
   const [splitMode, setSplitMode] = useState(options.splitMode);
-  const [viewedFiles] = useState<Set<string>>(new Set());
+  const [viewedFiles, setViewedFiles] = useState<Set<string>>(
+    () => initialViewedFiles ?? new Set(),
+  );
   const [flash, setFlash] = useState("");
   const [editingComment, setEditingComment] = useState<ReviewComment | null>(
     null,
@@ -59,11 +117,30 @@ export function App({ files, options }: AppProps) {
   // In split mode: which side is focused ("old" = before, "new" = after)
   const [activeSide, setActiveSide] = useState<"old" | "new">("new");
 
+  // Persist viewed files to cache on change
+  useEffect(() => {
+    if (viewedCachePath) {
+      saveViewedFiles(viewedCachePath, viewedFiles);
+    }
+  }, [viewedFiles, viewedCachePath]);
+
   // Tree state for file-list mode
   const [treeIndex, setTreeIndex] = useState(0);
   const [previewSplitMode, setPreviewSplitMode] = useState(options.splitMode);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
-  const [treePercent, setTreePercent] = useState(0.2);
+  const [treePercent, setTreePercent] = useState(() => {
+    const saved = initialPrefs?.treePercent;
+    return typeof saved === "number" && saved >= 0.1 && saved <= 0.5
+      ? saved
+      : 0.2;
+  });
+
+  // Persist tree width to prefs on change
+  useEffect(() => {
+    if (prefsCachePath) {
+      savePrefs(prefsCachePath, { treePercent });
+    }
+  }, [treePercent, prefsCachePath]);
 
   // Fold/unfold state: file path → expanded fold IDs
   const [expandedFolds, setExpandedFolds] = useState<Map<string, Set<number>>>(
@@ -308,6 +385,22 @@ export function App({ files, options }: AppProps) {
         case "t":
           setPreviewSplitMode((s) => !s);
           return;
+        case "v": {
+          const row = flatRows[treeIndex];
+          if (row && row.fileIndex !== null && row.node.file) {
+            const path = row.node.file.path;
+            setViewedFiles((prev) => {
+              const next = new Set(prev);
+              if (next.has(path)) {
+                next.delete(path);
+              } else {
+                next.add(path);
+              }
+              return next;
+            });
+          }
+          return;
+        }
         case "c":
           setMode("comment-list");
           setCommentIndex(0);
@@ -316,13 +409,13 @@ export function App({ files, options }: AppProps) {
           setMode("prompt-preview");
           return;
       }
-      // [ / ] to resize tree panel (10% steps, min 10% max 50%)
+      // [ / ] to resize tree panel (5% steps, min 10% max 50%)
       if (key.raw === "[") {
-        setTreePercent((p) => Math.max(0.1, Math.round((p - 0.1) * 10) / 10));
+        setTreePercent((p) => Math.max(0.1, Math.round((p - 0.05) * 20) / 20));
         return;
       }
       if (key.raw === "]") {
-        setTreePercent((p) => Math.min(0.5, Math.round((p + 0.1) * 10) / 10));
+        setTreePercent((p) => Math.min(0.5, Math.round((p + 0.05) * 20) / 20));
         return;
       }
       return;
@@ -443,6 +536,24 @@ export function App({ files, options }: AppProps) {
         case "t":
           setSplitMode((s) => !s);
           return;
+        case "v": {
+          const path = currentFile.path;
+          setViewedFiles((prev) => {
+            const next = new Set(prev);
+            if (next.has(path)) {
+              next.delete(path);
+              return next;
+            }
+            next.add(path);
+            return next;
+          });
+          showFlash(
+            viewedFiles.has(currentFile.path)
+              ? "Unmarked as viewed"
+              : "\u2713 Marked as viewed",
+          );
+          return;
+        }
       }
       return;
     }
@@ -624,7 +735,8 @@ export function App({ files, options }: AppProps) {
       return `${diffRange}  (${files.length} files, ${comments.length} comments)`;
     }
     if ((mode === "diff-view" || mode === "comment-input") && currentFile) {
-      const filePart = `${currentFile.path} [${currentFile.status[0]?.toUpperCase()}] +${currentFile.additions}/-${currentFile.deletions}`;
+      const viewedMark = viewedFiles.has(currentFile.path) ? "\u2713 " : "";
+      const filePart = `${viewedMark}${currentFile.path} [${currentFile.status[0]?.toUpperCase()}] +${currentFile.additions}/-${currentFile.deletions}`;
       if (mode === "comment-input") {
         if (cursorLine === 0) {
           return `Comment: ${currentFile.path} (file)`;

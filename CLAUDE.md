@@ -41,10 +41,13 @@ Flags: `--staged`, `--root`, `--split` / `--mode=split`, `-h` / `--help`
 
 - `<diff>` element for native diff rendering with tree-sitter highlighting
 - `<textarea>` for comment input (handles its own keyboard)
-- `<scrollbox>` for scrollable content
+- `<scrollbox>` for scrollable content (diff-view, diff-preview)
+- File tree uses manual `<box>` + array slicing (not `<scrollbox>`) with segment-based rendering to preserve colors during horizontal scroll viewport windowing
+- Home screen split: `availableWidth = width - dividerWidth`, drag restricted to divider area via `draggingDividerRef`
 - `Bun.spawnSync` for git operations (no async shell, no user input in commands)
 - Comment mode disables app-level keyboard (textarea owns input)
 - Fold/unfold via `collapseDiff()` — pure function, no side effects
+- Colors and icons centralized in `constants.ts`
 
 ## Modes
 
@@ -57,11 +60,12 @@ src/
   index.tsx          Entry point, CLI help, renderer setup
   app.tsx            Main component, keyboard dispatch, state
   types.ts           DiffFile, ReviewComment, AppMode, CliOptions
+  constants.ts       COLORS, STATUS_ICONS, GENERATED_PATTERNS
   cli/
     args.ts          CLI argument parsing
   components/
     home-screen.tsx  File tree + diff preview (resizable split via [ key and mouse drag)
-    file-tree.tsx    File tree with directory collapsing
+    file-tree.tsx    File tree with directory collapsing, manual scroll, segment-based rendering
     file-list.tsx    Flat file list (legacy)
     diff-view.tsx    Full diff viewer with cursor/comments
     diff-preview.tsx Read-only diff preview for home screen
@@ -90,6 +94,7 @@ Tests in `src/__tests__/`. Uses `bun:test`.
 All git operations use `Bun.spawnSync` — no shell injection risk.
 When implementing or changing features, always add or update corresponding tests.
 
-## CLAUDE.md Maintenance
+## CLAUDE.md / README.md Maintenance
 
 Update CLAUDE.md when architecture, file structure, or key patterns change.
+Update README.md when user-facing behavior changes (keybindings, CLI options, usage, install steps, etc.).
