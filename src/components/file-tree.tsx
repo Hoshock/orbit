@@ -1,3 +1,4 @@
+import type { MouseEvent } from "@opentui/core";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { COLORS } from "../constants.ts";
@@ -161,7 +162,7 @@ export function FileTree({
   }, [selectedIndex, height]);
 
   const handleMouseScroll = useCallback(
-    (event: any) => {
+    (event: MouseEvent) => {
       const dir = event.scroll?.direction;
       const delta = event.scroll?.delta ?? 1;
       if (dir === "up") {

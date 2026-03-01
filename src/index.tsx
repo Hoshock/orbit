@@ -165,6 +165,7 @@ async function main() {
       viewedCachePath={viewedCachePath}
       initialPrefs={cachedPrefs}
       prefsCachePath={prefsCachePath}
+      onQuit={shutdown}
     />,
   );
 }

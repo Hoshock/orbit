@@ -12,8 +12,12 @@ function run(args: string): { stdout: string; exitCode: number } {
       timeout: 5000,
     });
     return { stdout, exitCode: 0 };
-  } catch (err: any) {
-    return { stdout: err.stdout ?? "", exitCode: err.status ?? 1 };
+  } catch (err: unknown) {
+    if (err && typeof err === "object") {
+      const e = err as { stdout?: string; status?: number };
+      return { stdout: e.stdout ?? "", exitCode: e.status ?? 1 };
+    }
+    return { stdout: "", exitCode: 1 };
   }
 }
 

@@ -10,12 +10,6 @@
       "style": {
         "noNonNullAssertion": "off"
       },
-      "suspicious": {
-        "noExplicitAny": "off"
-      },
-      "correctness": {
-        "noUnusedFunctionParameters": "off"
-      },
       "a11y": {
         "noStaticElementInteractions": "off"
       }

@@ -1,3 +1,4 @@
+import type { TextareaRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useEffect, useRef } from "react";
 import { COLORS } from "../constants.ts";
@@ -25,7 +26,7 @@ export function CommentForm({
   initialBody,
 }: CommentFormProps) {
   const { width, height } = useTerminalDimensions();
-  const textareaRef = useRef<any>(null);
+  const textareaRef = useRef<TextareaRenderable | null>(null);
   const onSubmitRef = useRef(onSubmit);
   onSubmitRef.current = onSubmit;
 

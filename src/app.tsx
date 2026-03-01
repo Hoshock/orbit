@@ -35,7 +35,6 @@ import {
   sourceLineToDisplayLineSplit,
 } from "./data/diff-parser.ts";
 import { formatPrompt } from "./data/prompt-formatter.ts";
-import { shutdown } from "./index.tsx";
 import type { AppMode, CliOptions, DiffFile, ReviewComment } from "./types.ts";
 import { copyToClipboard } from "./utils/clipboard.ts";
 import { buildFileTree, flattenTree } from "./utils/file-tree.ts";
@@ -47,6 +46,7 @@ interface AppProps {
   viewedCachePath?: string;
   initialPrefs?: Record<string, unknown>;
   prefsCachePath?: string;
+  onQuit: () => void;
 }
 
 export function App({
@@ -56,6 +56,7 @@ export function App({
   viewedCachePath,
   initialPrefs,
   prefsCachePath,
+  onQuit,
 }: AppProps) {
   const { width, height } = useTerminalDimensions();
   const renderer = useRenderer();
@@ -75,7 +76,10 @@ export function App({
       pending = true;
       setImmediate(() => {
         pending = false;
-        const r = renderer as any;
+        const r = renderer as typeof renderer & {
+          setCapturedRenderable?: (renderable: unknown) => void;
+          mouseParser?: { reset?: () => void };
+        };
         r.setCapturedRenderable?.(undefined);
         r.mouseParser?.reset?.();
         if (renderer.hasSelection) renderer.clearSelection();
@@ -280,7 +284,7 @@ export function App({
       switch (key.name) {
         case "escape":
         case "q":
-          shutdown();
+          onQuit();
           return;
         case "down":
           setTreeIndex((i) => Math.min(i + 1, flatRows.length - 1));
