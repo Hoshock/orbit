@@ -168,11 +168,13 @@ Paste that into Claude Code (or any LLM) and it has enough context to act on eac
 
 Comments, viewed status, and tree panel width are automatically saved and restored across sessions.
 
-- **Comments**: saved to `/tmp/orbit-<repo>-<hash>.json` on every add, edit, and delete
-- **Viewed files**: saved to the same cache, restored when reopening the same diff range
-- **Tree panel width**: saved to a separate prefs cache, shared across all diff ranges
+| Data             | Cache file                             |
+| ---------------- | -------------------------------------- |
+| Comments         | `/tmp/orbit-<repo>-<hash>.json`        |
+| Viewed files     | `/tmp/orbit-<repo>-<hash>-viewed.json` |
+| Tree panel width | `/tmp/orbit-<repo>-<hash>-prefs.json`  |
 
-The hash is derived from the diff range (e.g., `HEAD~1..HEAD`), so different ranges get separate comment/viewed caches. Cache files live in `/tmp` and are cleared on OS restart.
+The hash is derived from the diff range (e.g., `HEAD~1..HEAD`), so different ranges get separate caches. Cache files live in `/tmp` and are cleared on OS restart.
 
 ## Stack
 
