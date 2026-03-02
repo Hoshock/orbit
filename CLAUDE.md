@@ -1,35 +1,70 @@
-# orbit (Offline Review Board In Terminal)
+# orbit
 
-Terminal code-review TUI (OpenTUI + React + Bun).
+orbit is a terminal-first code review TUI for git diffs.
+It supports file-tree navigation, unified/split diff views, inline comments, fold/unfold, and prompt export for AI coding workflows.
 
-## Commands
+## Project Structure
 
-- `bun run start`
-- `bun test`
-- `bun run check`
-- `bun run lint`
+### Tech Stack
 
-## Core Structure
+| Layer                     | Technology      | Role                                      |
+| ------------------------- | --------------- | ----------------------------------------- |
+| Runtime / Package Manager | Bun             | app runtime, scripts, test runner, build  |
+| UI Framework              | OpenTUI + React | terminal rendering, component/state model |
+| Language                  | TypeScript      | application and test implementation       |
+| Lint / Format             | Biome           | static checks and formatting              |
 
-- Entry: `src/index.tsx` (`parseArgs` -> git diff parse -> renderer -> `<App />`)
-- Main state/keyboard: `src/app.tsx`
-- Diff render/fold visuals: `src/components/diff-view.tsx`
-- Fold/unfold + mapping: `src/data/diff-collapse.ts`, `src/data/diff-parser.ts`
-- Comments store/cache: `src/data/comment-store.ts`, `src/data/comment-cache.ts`
+### Important Files
 
-## Important Behavior Contracts
+- `src/index.tsx`: CLI entrypoint (`parseArgs` -> diff parse -> renderer -> `<App />`)
+- `src/app.tsx`: main app state, keyboard handling, mode transitions
+- `src/components/diff-view.tsx`: diff rendering, cursor highlight, split/unified interactions
+- `src/components/home-screen.tsx`: file tree + preview layout and tree panel width handling
+- `src/components/help-bar.tsx`: mode-specific keybinding hints shown to users
+- `src/data/diff-parser.ts`: display/source line mapping and split-row semantics
+- `src/data/diff-collapse.ts`: fold/unfold generation and marker mapping
+- `src/data/comment-store.ts`: in-memory comment state and mutations
+- `src/data/persistence.ts`: session/cache/config path resolution and persistence logic
+- `src/__tests__/tui.test.ts`: UI interaction regression tests (key/mouse/view behavior)
+- `src/__tests__/diff-parser.test.ts`: parser and line-mapping regression tests
+- `src/__tests__/diff-collapse.test.ts`: fold/unfold regression tests
+- `src/__tests__/cli-help.test.ts`: `--help` output and ordering consistency tests
 
-- `README` usage order, `--help` usage order, and help-bar key labels must stay aligned.
-- Fold/unfold (`z`) must keep cursor/scroll stable after expansion and while moving with keyboard.
-- File-list and diff-view keybindings are part of the public UX; update tests when changing them.
+## Development
 
-## Testing Policy
+### Boundary
 
-- Always run `bun run check` and `bun test` after changes.
-- UI behavior changes require regression tests in `src/__tests__/tui.test.ts`.
-- Fold/parser logic changes require tests in `src/__tests__/diff-collapse.test.ts` or `src/__tests__/diff-parser.test.ts`.
+- MUST:
+  - Keep `README` usage order, `--help` usage order, and help-bar labels consistent.
+- NEVER:
+  - Introduce behavior changes without matching regression tests.
+  - Update only one of docs/help/UI labels when keybindings or commands change.
 
-## Docs Sync
+### Commands
 
-- User-facing behavior changes: update `README.md`.
-- Help text/keybinding changes: update `src/index.tsx` HELP, `src/components/help-bar.tsx`, and `src/__tests__/cli-help.test.ts`.
+```shell
+bun run start      # Run orbit from source (local development launch)
+bun run check      # Run Biome check + Bun build verification
+bun test           # Execute all test suites
+bun run lint       # Apply Biome fixes (write mode, includes unsafe fixes)
+```
+
+### Testing
+
+- Run `bun run check` and `bun test` after every change.
+- UI behavior changes must include/adjust tests in `src/__tests__/tui.test.ts`.
+- Fold or diff parsing changes must include/adjust tests in:
+  - `src/__tests__/diff-collapse.test.ts`
+  - `src/__tests__/diff-parser.test.ts`
+- Help text/keybinding changes must update:
+  - `README.md`
+  - `src/index.tsx` HELP text
+  - `src/components/help-bar.tsx`
+  - `src/__tests__/cli-help.test.ts`
+
+### Completion Check
+
+- Code changes are implemented and consistent with project behavior contracts.
+- Required docs/help updates are included when user-facing behavior changes.
+- `bun run check` passes.
+- `bun test` passes.

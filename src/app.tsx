@@ -37,7 +37,6 @@ import {
 } from "./data/diff-parser.ts";
 import {
   DEFAULT_ORBIT_CONFIG,
-  saveOrbitConfig,
   saveSessionPrefs,
   saveSessionViewedFiles,
 } from "./data/persistence.ts";
@@ -82,7 +81,6 @@ export function App({
   sessionCachePath,
   initialPrefs,
   config,
-  configPath,
   onQuit,
 }: AppProps) {
   const { width, height } = useTerminalDimensions();
@@ -149,7 +147,6 @@ export function App({
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
   // In split mode: which side is focused ("old" = before, "new" = after)
   const [activeSide, setActiveSide] = useState<"old" | "new">("new");
-  const [defaultSplitMode, setDefaultSplitMode] = useState(options.splitMode);
   const keybindings = config?.keybindings ?? DEFAULT_ORBIT_CONFIG.keybindings;
   const fileTreeKeys = keybindings.fileTree;
   const diffViewKeys = keybindings.diffView;
@@ -181,18 +178,6 @@ export function App({
       saveSessionPrefs(sessionCachePath, { treePercent });
     }
   }, [treePercent, sessionCachePath]);
-
-  useEffect(() => {
-    if (!configPath) return;
-    saveOrbitConfig(
-      {
-        fileTreeInitialWidth: treePercent,
-        initialView: defaultSplitMode ? "split" : "unified",
-        keybindings,
-      },
-      configPath,
-    );
-  }, [configPath, defaultSplitMode, keybindings, treePercent]);
 
   // Fold/unfold state: file path → (foldId → revealedLines)
   const [expandedFolds, setExpandedFolds] = useState<
@@ -399,11 +384,7 @@ export function App({
         return;
       }
       if (isBindingPressed(key, fileTreeKeys.toggleViewMode)) {
-        setPreviewSplitMode((s) => {
-          const next = !s;
-          setDefaultSplitMode(next);
-          return next;
-        });
+        setPreviewSplitMode((s) => !s);
         return;
       }
       if (isBindingPressed(key, fileTreeKeys.toggleViewed)) {
@@ -673,11 +654,7 @@ export function App({
         return;
       }
       if (isBindingPressed(key, diffViewKeys.toggleViewMode)) {
-        setSplitMode((s) => {
-          const next = !s;
-          setDefaultSplitMode(next);
-          return next;
-        });
+        setSplitMode((s) => !s);
         return;
       }
       if (isBindingPressed(key, diffViewKeys.toggleViewed)) {

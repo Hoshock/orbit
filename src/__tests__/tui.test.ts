@@ -1,5 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 import { setMaxListeners } from "node:events";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DiffRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createElement, useMemo, useState } from "react";
@@ -495,6 +498,45 @@ describe("App integration", () => {
       });
     }
   });
+
+  it("does not overwrite config width when session prefs provide tree width", async () => {
+    commentStore.reset();
+    const tmpRoot = mkdtempSync(join(tmpdir(), "orbit-config-preserve-"));
+    const configPath = join(tmpRoot, "config.toml");
+    const originalConfig = [
+      "file_tree_initial_width = 0.2",
+      'initial_view = "unified"',
+      "",
+    ].join("\n");
+    writeFileSync(configPath, originalConfig);
+
+    const { renderOnce, renderer } = await testRender(
+      createElement(App, {
+        files: [makeFile()],
+        options: {
+          base: "HEAD~1",
+          target: "HEAD",
+          splitMode: false,
+          root: false,
+        },
+        initialPrefs: { treePercent: 0.15 },
+        config: DEFAULT_ORBIT_CONFIG,
+        configPath,
+        onQuit: () => {},
+      }),
+      RENDER_OPTS,
+    );
+
+    try {
+      await renderOnce();
+      expect(readFileSync(configPath, "utf-8")).toBe(originalConfig);
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 // ── DiffView ──
@@ -573,6 +615,18 @@ describe("DiffView component", () => {
 
   it("reports clicked side in split mode", async () => {
     const onCursorChange = mock(() => {});
+    const max = getDisplayLineCount(file.rawDiff, true);
+    let rowWithBothSides: number | null = null;
+    for (let d = 1; d <= max; d++) {
+      const src = displayLineToSourceLineSplit(file.rawDiff, d);
+      if (src.oldLine !== null && src.newLine !== null) {
+        rowWithBothSides = d;
+        break;
+      }
+    }
+    expect(rowWithBothSides).not.toBeNull();
+    if (!rowWithBothSides) return;
+
     const { mockMouse, renderOnce } = await testRender(
       createElement(DiffView, {
         file,
@@ -584,9 +638,9 @@ describe("DiffView component", () => {
       RENDER_OPTS,
     );
     await renderOnce();
-    await mockMouse.click(5, 5);
+    await mockMouse.click(5, rowWithBothSides - 1);
     await renderOnce();
-    await mockMouse.click(70, 5);
+    await mockMouse.click(70, rowWithBothSides - 1);
     await renderOnce();
 
     const sides = onCursorChange.mock.calls
@@ -594,6 +648,55 @@ describe("DiffView component", () => {
       .filter((s): s is "old" | "new" => s === "old" || s === "new");
     expect(sides).toContain("old");
     expect(sides).toContain("new");
+  });
+
+  it("ignores clicks on split-side padded rows", async () => {
+    const splitPadFile = makeFile({
+      rawDiff: `diff --git a/pad.ts b/pad.ts
+--- a/pad.ts
++++ b/pad.ts
+@@ -1,4 +1,3 @@
+-a
+-b
++B
+ c
+ d
+`,
+    });
+    const onCursorChange = mock(() => {});
+    const max = getDisplayLineCount(splitPadFile.rawDiff, true);
+    let paddedOnNew: number | null = null;
+    for (let d = 1; d <= max; d++) {
+      const src = displayLineToSourceLineSplit(splitPadFile.rawDiff, d);
+      if (src.oldLine !== null && src.newLine === null) {
+        paddedOnNew = d;
+        break;
+      }
+    }
+    expect(paddedOnNew).not.toBeNull();
+    if (!paddedOnNew) return;
+
+    const { mockMouse, renderOnce } = await testRender(
+      createElement(DiffView, {
+        file: splitPadFile,
+        cursorLine: 1,
+        comments: [],
+        splitMode: true,
+        onCursorChange,
+      }),
+      RENDER_OPTS,
+    );
+    await renderOnce();
+
+    await mockMouse.click(70, paddedOnNew - 1);
+    await renderOnce();
+    expect(onCursorChange).not.toHaveBeenCalled();
+
+    await mockMouse.click(5, paddedOnNew - 1);
+    await renderOnce();
+    expect(onCursorChange).toHaveBeenCalledTimes(1);
+    expect(onCursorChange.mock.calls[0]![0]).toBe(paddedOnNew);
+    expect(onCursorChange.mock.calls[0]![1]).toBe("old");
   });
 
   it("keeps native +/- line colors when cursor moves away", async () => {

@@ -339,13 +339,18 @@ export function DiffView({
   const handleMouseDown = (event: MouseEvent) => {
     if (!onCursorChange) return;
     const line = scrollTopRef.current + event.y + 1;
+    const clampedLine = Math.min(Math.max(1, line), totalLines);
     if (splitMode) {
       const clickedSide: "old" | "new" =
         event.x < Math.floor(width / 2) ? "old" : "new";
-      onCursorChange(Math.max(1, line), clickedSide);
+      const row = splitDisplayLineTypes?.[clampedLine];
+      if (!row) return;
+      if (clickedSide === "old" && row.old === null) return;
+      if (clickedSide === "new" && row.new === null) return;
+      onCursorChange(clampedLine, clickedSide);
       return;
     }
-    onCursorChange(Math.max(1, line));
+    onCursorChange(clampedLine);
   };
 
   return (
