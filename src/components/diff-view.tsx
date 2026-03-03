@@ -91,6 +91,7 @@ export function DiffView({
     start: number;
     end: number;
   } | null>(null);
+  const prevCursorLineRef = useRef(cursorLine);
   const [overlayRevision, setOverlayRevision] = useState(0);
 
   const totalLines = useMemo(
@@ -311,19 +312,32 @@ export function DiffView({
     // Scroll: only scroll when cursor goes out of visible area
     const sb = scrollRef.current;
     if (sb) {
+      const prevCursorLine = prevCursorLineRef.current;
       const row = cursorLine - 1;
       const maxScrollTop = Math.max(0, totalLines - diffHeight);
-      let top = Math.min(scrollTopRef.current, maxScrollTop);
+      const currentTop = Math.floor(
+        Math.min(Math.max(sb.scrollTop, 0), maxScrollTop),
+      );
+      let top = currentTop;
 
       if (row < top) {
         top = row;
       } else if (row >= top + diffHeight) {
         top = row - diffHeight + 1;
       }
+      const prevRow = prevCursorLine - 1;
+      const wasPrevVisible =
+        prevRow >= currentTop && prevRow < currentTop + diffHeight;
+      if (wasPrevVisible) {
+        // While the previous cursor row is visible, keep viewport movement
+        // incremental to prevent visible shake from transient input ordering.
+        top = Math.max(currentTop - 1, Math.min(currentTop + 1, top));
+      }
       top = Math.min(top, maxScrollTop);
       if (sb.scrollTop !== top) sb.scrollTop = top;
       scrollTopRef.current = top;
     }
+    prevCursorLineRef.current = cursorLine;
   }, [
     cursorLine,
     selectionRange,
@@ -336,9 +350,15 @@ export function DiffView({
     splitDisplayLineTypes,
   ]);
 
-  const handleMouseDown = (event: MouseEvent) => {
+  const handleClick = (event: MouseEvent) => {
     if (!onCursorChange) return;
-    const line = scrollTopRef.current + event.y + 1;
+    if (event.type !== "down" || event.button !== 0 || event.isDragging) return;
+    const currentTop = Math.max(
+      0,
+      Math.floor(scrollRef.current?.scrollTop ?? scrollTopRef.current),
+    );
+    scrollTopRef.current = currentTop;
+    const line = currentTop + event.y + 1;
     const clampedLine = Math.min(Math.max(1, line), totalLines);
     if (splitMode) {
       const clickedSide: "old" | "new" =
@@ -366,7 +386,8 @@ export function DiffView({
           filetype={getFiletype(file.path)}
           treeSitterClient={treeSitterClient}
           onMouseDown={(event: MouseEvent) => {
-            handleMouseDown(event);
+            handleClick(event);
+            event.preventDefault();
             event.stopPropagation();
           }}
         />

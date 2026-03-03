@@ -1,4 +1,5 @@
 import {
+  flushSync,
   useKeyboard,
   useRenderer,
   useTerminalDimensions,
@@ -27,6 +28,7 @@ import {
   displayLineToSourceLineSplit,
   displayRangeToSourceRange,
   displayRangeToSourceRangeSplit,
+  findNearestDisplayLineForSideSplit,
   findNearestFoldIdByDisplayLine,
   findNextDisplayLineForSideSplit,
   getDisplayLineCount,
@@ -86,6 +88,15 @@ export function App({
   const { width, height } = useTerminalDimensions();
   const renderer = useRenderer();
 
+  const resetMouseParserState = useCallback(() => {
+    const r = renderer as typeof renderer & {
+      setCapturedRenderable?: (renderable: unknown) => void;
+      mouseParser?: { reset?: () => void };
+    };
+    r.setCapturedRenderable?.(undefined);
+    r.mouseParser?.reset?.();
+  }, [renderer]);
+
   // Recover from terminal focus changes (e.g. cmux/tmux workspace switch).
   //
   // OpenTUI's stdinListener processes mouse data BEFORE input handlers.
@@ -101,12 +112,7 @@ export function App({
       pending = true;
       setImmediate(() => {
         pending = false;
-        const r = renderer as typeof renderer & {
-          setCapturedRenderable?: (renderable: unknown) => void;
-          mouseParser?: { reset?: () => void };
-        };
-        r.setCapturedRenderable?.(undefined);
-        r.mouseParser?.reset?.();
+        resetMouseParserState();
         if (renderer.hasSelection) renderer.clearSelection();
         renderer.currentRenderBuffer.clear();
         renderer.intermediateRender();
@@ -114,7 +120,8 @@ export function App({
     };
 
     const onStdin = (data: Buffer) => {
-      if (data.toString().includes("\x1b[I")) {
+      const chunk = data.toString();
+      if (chunk.includes("\x1b[I")) {
         resetMouseState();
       }
     };
@@ -125,7 +132,7 @@ export function App({
       process.stdin.removeListener("data", onStdin);
       renderer.off("focus", resetMouseState);
     };
-  }, [renderer]);
+  }, [renderer, resetMouseParserState]);
 
   const comments = useSyncExternalStore(
     commentStore.subscribe,
@@ -162,7 +169,6 @@ export function App({
 
   // Tree state for file-list mode
   const [treeIndex, setTreeIndex] = useState(0);
-  const [previewSplitMode, setPreviewSplitMode] = useState(options.splitMode);
   const [collapsedDirs, setCollapsedDirs] = useState<Set<string>>(new Set());
   const [treePercent, setTreePercent] = useState(() => {
     const saved = initialPrefs?.treePercent;
@@ -384,7 +390,7 @@ export function App({
         return;
       }
       if (isBindingPressed(key, fileTreeKeys.toggleViewMode)) {
-        setPreviewSplitMode((s) => !s);
+        setSplitMode((s) => !s);
         return;
       }
       if (isBindingPressed(key, fileTreeKeys.toggleViewed)) {
@@ -425,6 +431,7 @@ export function App({
 
     if (mode === "diff-view") {
       if (!currentFile) return;
+      key.preventDefault?.();
       const maxLine = getDisplayLineCount(activeDiff, splitMode);
 
       switch (key.name) {
@@ -436,50 +443,90 @@ export function App({
           }
           return;
         case "down": {
-          const nextLine = splitMode
-            ? findNextDisplayLineForSideSplit(
-                activeDiff,
-                cursorLine,
-                activeSide,
-                1,
-                splitDisplayLineTypes ?? undefined,
-              )
-            : Math.min(cursorLine + 1, maxLine);
-
           if (key.shift) {
             if (selectionAnchor === null) setSelectionAnchor(cursorLine);
-            if (nextLine !== cursorLine) setCursorLine(nextLine);
+            setCursorLine((line) =>
+              splitMode
+                ? findNextDisplayLineForSideSplit(
+                    activeDiff,
+                    line,
+                    activeSide,
+                    1,
+                    splitDisplayLineTypes ?? undefined,
+                  )
+                : Math.min(line + 1, maxLine),
+            );
           } else {
             if (selectionAnchor !== null) setSelectionAnchor(null);
-            if (nextLine !== cursorLine) setCursorLine(nextLine);
+            setCursorLine((line) =>
+              splitMode
+                ? findNextDisplayLineForSideSplit(
+                    activeDiff,
+                    line,
+                    activeSide,
+                    1,
+                    splitDisplayLineTypes ?? undefined,
+                  )
+                : Math.min(line + 1, maxLine),
+            );
           }
           return;
         }
         case "up": {
-          const nextLine = splitMode
-            ? findNextDisplayLineForSideSplit(
-                activeDiff,
-                cursorLine,
-                activeSide,
-                -1,
-                splitDisplayLineTypes ?? undefined,
-              )
-            : Math.max(cursorLine - 1, 1);
-
           if (key.shift) {
             if (selectionAnchor === null) setSelectionAnchor(cursorLine);
-            if (nextLine !== cursorLine) setCursorLine(nextLine);
+            setCursorLine((line) =>
+              splitMode
+                ? findNextDisplayLineForSideSplit(
+                    activeDiff,
+                    line,
+                    activeSide,
+                    -1,
+                    splitDisplayLineTypes ?? undefined,
+                  )
+                : Math.max(line - 1, 1),
+            );
           } else {
             if (selectionAnchor !== null) setSelectionAnchor(null);
-            if (nextLine !== cursorLine) setCursorLine(nextLine);
+            setCursorLine((line) =>
+              splitMode
+                ? findNextDisplayLineForSideSplit(
+                    activeDiff,
+                    line,
+                    activeSide,
+                    -1,
+                    splitDisplayLineTypes ?? undefined,
+                  )
+                : Math.max(line - 1, 1),
+            );
           }
           return;
         }
         case "left":
-          if (splitMode) setActiveSide("old");
+          if (splitMode) {
+            setActiveSide("old");
+            setCursorLine((line) =>
+              findNearestDisplayLineForSideSplit(
+                activeDiff,
+                line,
+                "old",
+                splitDisplayLineTypes ?? undefined,
+              ),
+            );
+          }
           return;
         case "right":
-          if (splitMode) setActiveSide("new");
+          if (splitMode) {
+            setActiveSide("new");
+            setCursorLine((line) =>
+              findNearestDisplayLineForSideSplit(
+                activeDiff,
+                line,
+                "new",
+                splitDisplayLineTypes ?? undefined,
+              ),
+            );
+          }
           return;
       }
 
@@ -915,7 +962,7 @@ export function App({
           comments={comments}
           viewedFiles={viewedFiles}
           collapsedDirs={collapsedDirs}
-          previewSplitMode={previewSplitMode}
+          previewSplitMode={splitMode}
           treePercent={treePercent}
           expandedFolds={expandedFolds}
           onTreeResize={setTreePercent}
@@ -960,8 +1007,12 @@ export function App({
             mode === "diff-view"
               ? (line, side) => {
                   const maxLine = getDisplayLineCount(activeDiff, splitMode);
-                  setCursorLine(Math.min(line, maxLine));
-                  if (splitMode && side) setActiveSide(side);
+                  const clampedLine = Math.min(line, maxLine);
+                  flushSync(() => {
+                    setCursorLine(clampedLine);
+                    if (splitMode && side) setActiveSide(side);
+                  });
+                  renderer.intermediateRender();
                 }
               : undefined
           }
@@ -1038,7 +1089,7 @@ export function App({
       <HelpBar
         mode={mode}
         flash={flash}
-        splitMode={mode === "file-list" ? previewSplitMode : splitMode}
+        splitMode={splitMode}
         keybindings={keybindings}
       />
     </box>

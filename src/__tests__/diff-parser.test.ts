@@ -6,6 +6,7 @@ import {
   displayLineToSourceLineSplit,
   displayRangeToSourceRange,
   displayRangeToSourceRangeSplit,
+  findNearestDisplayLineForSideSplit,
   findNearestFoldIdByDisplayLine,
   findNextDisplayLineForSideSplit,
   getDiffLineType,
@@ -584,6 +585,39 @@ describe("findNextDisplayLineForSideSplit", () => {
     expect(
       findNextDisplayLineForSideSplit(SAMPLE_DIFF, 2, "new", 1, rows),
     ).toBe(3);
+  });
+});
+
+describe("findNearestDisplayLineForSideSplit", () => {
+  it("returns current row when the side exists on that row", () => {
+    expect(findNearestDisplayLineForSideSplit(SAMPLE_DIFF, 1, "old")).toBe(1);
+    expect(findNearestDisplayLineForSideSplit(SAMPLE_DIFF, 1, "new")).toBe(1);
+  });
+
+  it("moves to the nearest row with source on target side", () => {
+    // Row3 has new but no old; nearest old is row2.
+    expect(findNearestDisplayLineForSideSplit(SAMPLE_DIFF, 3, "old")).toBe(2);
+  });
+
+  it("prefers upward row when up/down distance is equal", () => {
+    const diff = `diff --git a/pad.ts b/pad.ts
+--- a/pad.ts
++++ b/pad.ts
+@@ -1,2 +1,3 @@
+-a
++A
++B
+ c
+`;
+    // Row2 is new-only; nearest old rows are row1 and row3 (equal distance).
+    expect(findNearestDisplayLineForSideSplit(diff, 2, "old")).toBe(1);
+  });
+
+  it("uses prebuilt split row types when provided", () => {
+    const rows = buildSplitDisplayLineTypeMap(SAMPLE_DIFF);
+    expect(
+      findNearestDisplayLineForSideSplit(SAMPLE_DIFF, 3, "old", rows),
+    ).toBe(2);
   });
 });
 

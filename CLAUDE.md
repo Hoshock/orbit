@@ -68,3 +68,9 @@ bun run lint       # Apply Biome fixes (write mode, includes unsafe fixes)
 - Required docs/help updates are included when user-facing behavior changes.
 - `bun run check` passes.
 - `bun test` passes.
+
+## Lesson & Learn
+
+- Mouse click + keyboard navigation can race in OpenTUI update timing; for cursor changes originating from click callbacks, prefer synchronous state flush (`flushSync`) before forcing intermediate render.
+- In diff-view keyboard handling, call `key.preventDefault?.()` to avoid double-handling with focused renderables (e.g. `ScrollBoxRenderable`) that also process arrow keys.
+- Split side switching (`left`/`right`) should not keep cursor on padded rows. Always remap to the nearest row that has real source on the target side; add regression tests for both `new-only -> left` and `old-only -> right`.

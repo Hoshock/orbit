@@ -616,6 +616,55 @@ export function findNextDisplayLineForSideSplit(
 }
 
 /**
+ * In split view, find the nearest display row that has a source line
+ * on the requested side. If equally near above/below, prefer above.
+ */
+export function findNearestDisplayLineForSideSplit(
+  rawDiff: string,
+  currentDisplayLine: number,
+  side: "old" | "new",
+  rows?: SplitDisplayLineType[],
+): number {
+  const types = rows ?? buildSplitDisplayLineTypeMap(rawDiff);
+  const maxLine = types.length - 1;
+  if (maxLine < 1) return currentDisplayLine;
+
+  const current = Math.max(1, Math.min(maxLine, currentDisplayLine));
+  const currentRow = types[current];
+  if (currentRow) {
+    const hasCurrentSource =
+      side === "new" ? currentRow.new !== null : currentRow.old !== null;
+    if (hasCurrentSource) return current;
+  }
+
+  for (let distance = 1; distance <= maxLine; distance++) {
+    const up = current - distance;
+    if (up >= 1) {
+      const row = types[up];
+      const hasSource = row
+        ? side === "new"
+          ? row.new !== null
+          : row.old !== null
+        : false;
+      if (hasSource) return up;
+    }
+
+    const down = current + distance;
+    if (down <= maxLine) {
+      const row = types[down];
+      const hasSource = row
+        ? side === "new"
+          ? row.new !== null
+          : row.old !== null
+        : false;
+      if (hasSource) return down;
+    }
+  }
+
+  return current;
+}
+
+/**
  * Convert unified-view marker display lines to split-view display lines.
  * Fold markers are context lines, so they can be remapped via source lines.
  */

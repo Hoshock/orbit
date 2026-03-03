@@ -3,7 +3,7 @@ import { setMaxListeners } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DiffRenderable } from "@opentui/core";
+import { DiffRenderable, ScrollBoxRenderable } from "@opentui/core";
 import { testRender } from "@opentui/react/test-utils";
 import { act, createElement, useMemo, useState } from "react";
 import { App } from "../app.tsx";
@@ -88,6 +88,31 @@ function makeFoldHeavyDiff(): string {
   return `${header}\n${hunk}`;
 }
 
+function makeLongAddedDiff(lines = 80): string {
+  const header = [
+    "diff --git a/long.ts b/long.ts",
+    "--- a/long.ts",
+    "+++ b/long.ts",
+  ].join("\n");
+  const added = Array.from({ length: lines }, (_, i) => `+line${i + 1}`).join(
+    "\n",
+  );
+  return `${header}\n@@ -1 +1,${lines} @@\n-old\n${added}`;
+}
+
+function getHeaderCursorLine(frame: string): number | null {
+  const header = frame.split("\n")[0] ?? "";
+  const match = header.match(/L(\d+)\((?:old|new)\)/);
+  return match ? Number(match[1]) : null;
+}
+
+function getHeaderCursorSide(frame: string): "old" | "new" | null {
+  const header = frame.split("\n")[0] ?? "";
+  const match = header.match(/L\d+\((old|new)\)/);
+  if (!match) return null;
+  return match[1] === "old" ? "old" : "new";
+}
+
 function findDiffRenderable(root: { getChildren: () => unknown[] }):
   | (DiffRenderable & {
       buildView: (...args: unknown[]) => unknown;
@@ -110,6 +135,27 @@ function findDiffRenderable(root: { getChildren: () => unknown[] }):
         };
       }
       continue;
+    }
+    if (
+      "getChildren" in cur &&
+      typeof (cur as { getChildren?: unknown }).getChildren === "function"
+    ) {
+      const children = (cur as { getChildren: () => unknown[] }).getChildren();
+      for (const child of children) stack.push(child);
+    }
+  }
+  return null;
+}
+
+function findScrollBoxRenderable(root: {
+  getChildren: () => unknown[];
+}): ScrollBoxRenderable | null {
+  const stack: unknown[] = [root];
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    if (!cur || typeof cur !== "object") continue;
+    if (cur instanceof ScrollBoxRenderable) {
+      return cur;
     }
     if (
       "getChildren" in cur &&
@@ -499,6 +545,343 @@ describe("App integration", () => {
     }
   });
 
+  it("keeps keyboard movement stable after mouse click in diff-view", async () => {
+    commentStore.reset();
+    const files: DiffFile[] = [
+      makeFile({
+        path: "long.ts",
+        additions: 120,
+        deletions: 1,
+        rawDiff: makeLongAddedDiff(120),
+      }),
+    ];
+
+    const { captureCharFrame, mockInput, mockMouse, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files,
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: false,
+            root: false,
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressEnter();
+        await renderOnce();
+      });
+      await act(async () => {
+        for (let i = 0; i < 45; i++) {
+          mockInput.pressArrow("down");
+          await renderOnce();
+        }
+      });
+      await act(async () => {
+        await mockMouse.click(20, 6);
+        await renderOnce();
+      });
+      const lineAfterClick = getHeaderCursorLine(captureCharFrame());
+      expect(lineAfterClick).not.toBeNull();
+      if (lineAfterClick === null) return;
+
+      await act(async () => {
+        mockInput.pressArrow("down");
+        await renderOnce();
+      });
+      const lineAfterFirstDown = getHeaderCursorLine(captureCharFrame());
+      expect(lineAfterFirstDown).not.toBeNull();
+      if (lineAfterFirstDown === null) return;
+      expect(lineAfterFirstDown).toBeGreaterThanOrEqual(lineAfterClick);
+      expect(lineAfterFirstDown).toBeLessThanOrEqual(lineAfterClick + 1);
+
+      await act(async () => {
+        mockInput.pressArrow("down");
+        await renderOnce();
+      });
+      const lineAfterSecondDown = getHeaderCursorLine(captureCharFrame());
+      expect(lineAfterSecondDown).not.toBeNull();
+      if (lineAfterSecondDown === null) return;
+      expect(lineAfterSecondDown).toBeGreaterThanOrEqual(lineAfterFirstDown);
+      expect(lineAfterSecondDown).toBeLessThanOrEqual(lineAfterClick + 2);
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
+    }
+  });
+
+  it("keeps split keyboard movement stable after mouse click", async () => {
+    commentStore.reset();
+    const files: DiffFile[] = [
+      makeFile({
+        path: "long-split.ts",
+        additions: 120,
+        deletions: 1,
+        rawDiff: makeLongAddedDiff(120),
+      }),
+    ];
+
+    const { captureCharFrame, mockInput, mockMouse, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files,
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: true,
+            root: false,
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressEnter();
+        await renderOnce();
+      });
+      await act(async () => {
+        for (let i = 0; i < 45; i++) {
+          mockInput.pressArrow("down");
+          await renderOnce();
+        }
+      });
+
+      await act(async () => {
+        await mockMouse.click(70, 8);
+        await renderOnce();
+      });
+
+      const lineAfterClick = getHeaderCursorLine(captureCharFrame());
+      expect(lineAfterClick).not.toBeNull();
+      if (lineAfterClick === null) return;
+
+      await act(async () => {
+        mockInput.pressArrow("down");
+        await renderOnce();
+      });
+      const lineAfterFirstDown = getHeaderCursorLine(captureCharFrame());
+      expect(lineAfterFirstDown).not.toBeNull();
+      if (lineAfterFirstDown === null) return;
+      expect(lineAfterFirstDown).toBeGreaterThanOrEqual(lineAfterClick);
+      expect(lineAfterFirstDown).toBeLessThanOrEqual(lineAfterClick + 1);
+
+      await act(async () => {
+        mockInput.pressArrow("down");
+        await renderOnce();
+      });
+      const lineAfterSecondDown = getHeaderCursorLine(captureCharFrame());
+      expect(lineAfterSecondDown).not.toBeNull();
+      if (lineAfterSecondDown === null) return;
+      expect(lineAfterSecondDown).toBeGreaterThanOrEqual(lineAfterFirstDown);
+      expect(lineAfterSecondDown).toBeLessThanOrEqual(lineAfterClick + 2);
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
+    }
+  });
+
+  it("moves to nearest old-side row when pressing left on new-only split row", async () => {
+    commentStore.reset();
+    const files: DiffFile[] = [
+      makeFile({
+        path: "side-switch.ts",
+        rawDiff: `diff --git a/side-switch.ts b/side-switch.ts
+--- a/side-switch.ts
++++ b/side-switch.ts
+@@ -1,4 +1,6 @@
+-a
+-b
++A
++B
++C
++D
+ c
+ d
+`,
+      }),
+    ];
+
+    const { captureCharFrame, mockInput, mockMouse, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files,
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: true,
+            root: false,
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressEnter();
+        await renderOnce();
+      });
+
+      await act(async () => {
+        await mockMouse.click(70, 2);
+        await renderOnce();
+      });
+
+      expect(getHeaderCursorLine(captureCharFrame())).toBe(3);
+      expect(getHeaderCursorSide(captureCharFrame())).toBe("new");
+
+      for (let i = 0; i < 3; i++) {
+        await act(async () => {
+          mockInput.pressArrow("left");
+          await renderOnce();
+        });
+        if (getHeaderCursorSide(captureCharFrame()) === "old") break;
+      }
+
+      expect(getHeaderCursorLine(captureCharFrame())).toBe(2);
+      expect(getHeaderCursorSide(captureCharFrame())).toBe("old");
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
+    }
+  });
+
+  it("moves to nearest new-side row when pressing right on old-only split row", async () => {
+    commentStore.reset();
+    const files: DiffFile[] = [
+      makeFile({
+        path: "side-switch-right.ts",
+        rawDiff: `diff --git a/side-switch-right.ts b/side-switch-right.ts
+--- a/side-switch-right.ts
++++ b/side-switch-right.ts
+@@ -1,5 +1,4 @@
+-a
+-b
+-c
++A
++B
+ d
+ e
+`,
+      }),
+    ];
+
+    const { captureCharFrame, mockInput, mockMouse, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files,
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: true,
+            root: false,
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressEnter();
+        await renderOnce();
+      });
+
+      await act(async () => {
+        await mockMouse.click(5, 2);
+        await renderOnce();
+      });
+
+      expect(getHeaderCursorLine(captureCharFrame())).toBe(3);
+      expect(getHeaderCursorSide(captureCharFrame())).toBe("old");
+
+      for (let i = 0; i < 3; i++) {
+        await act(async () => {
+          mockInput.pressArrow("right");
+          await renderOnce();
+        });
+        if (getHeaderCursorSide(captureCharFrame()) === "new") break;
+      }
+
+      expect(getHeaderCursorLine(captureCharFrame())).toBe(2);
+      expect(getHeaderCursorSide(captureCharFrame())).toBe("new");
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
+    }
+  });
+
+  it("applies file-list split/unified toggle to diff-view", async () => {
+    commentStore.reset();
+    const { captureCharFrame, mockInput, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files: [
+            makeFile({
+              path: "file.ts",
+              rawDiff: `diff --git a/file.ts b/file.ts
+--- a/file.ts
++++ b/file.ts
+@@ -1 +1 @@
+-old
++new
+`,
+              additions: 1,
+              deletions: 1,
+            }),
+          ],
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: false,
+            root: false,
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+      expect(captureCharFrame()).toContain("t:split");
+
+      await act(async () => {
+        mockInput.pressKey("t");
+        await renderOnce();
+      });
+      expect(captureCharFrame()).toContain("t:unified");
+
+      await act(async () => {
+        mockInput.pressEnter();
+        await renderOnce();
+      });
+      await act(async () => {
+        mockInput.pressEnter();
+        await renderOnce();
+      });
+      expect(captureCharFrame()).toContain("split");
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
+    }
+  });
+
   it("does not overwrite config width when session prefs provide tree width", async () => {
     commentStore.reset();
     const tmpRoot = mkdtempSync(join(tmpdir(), "orbit-config-preserve-"));
@@ -611,6 +994,101 @@ describe("DiffView component", () => {
     expect(onCursorChange).toHaveBeenCalled();
     const calledLine = onCursorChange.mock.calls[0]![0];
     expect(calledLine).toBeGreaterThan(0);
+  });
+
+  it("maps click to integer line when scrollTop is fractional", async () => {
+    const onCursorChange = mock(() => {});
+    const longFile = makeFile({ rawDiff: makeLongAddedDiff(100) });
+    let mountedRenderer: { destroy: () => void } | null = null;
+    try {
+      const { mockMouse, renderOnce, renderer } = await testRender(
+        createElement(DiffView, {
+          file: longFile,
+          cursorLine: 1,
+          comments: [],
+          splitMode: false,
+          maxHeight: 8,
+          onCursorChange,
+        }),
+        RENDER_OPTS,
+      );
+      mountedRenderer = renderer;
+      await renderOnce();
+
+      const scrollbox = findScrollBoxRenderable(renderer.root);
+      expect(scrollbox).not.toBeNull();
+      if (!scrollbox) return;
+      scrollbox.scrollTop = 5.7;
+      const appliedTop = scrollbox.scrollTop;
+
+      await mockMouse.click(10, 2);
+      await renderOnce();
+
+      expect(onCursorChange).toHaveBeenCalledTimes(1);
+      const calledLine = onCursorChange.mock.calls[0]![0];
+      expect(Number.isInteger(calledLine)).toBeTrue();
+      expect(calledLine).toBe(Math.floor(appliedTop) + 3);
+    } finally {
+      if (mountedRenderer) {
+        await act(async () => {
+          mountedRenderer?.destroy();
+        });
+      }
+    }
+  });
+
+  it("keeps scroll position after external scroll then keyboard move", async () => {
+    const longFile = makeFile({ rawDiff: makeLongAddedDiff(100) });
+    let setCursorLine: ((line: number) => void) | null = null;
+    let mountedRenderer: { destroy: () => void } | null = null;
+
+    function Harness() {
+      const [cursor, setCursor] = useState(1);
+      setCursorLine = setCursor;
+      return createElement(DiffView, {
+        file: longFile,
+        cursorLine: cursor,
+        comments: [],
+        splitMode: false,
+        maxHeight: 8,
+      });
+    }
+
+    try {
+      const { renderOnce, renderer } = await testRender(
+        createElement(Harness),
+        RENDER_OPTS,
+      );
+      mountedRenderer = renderer;
+      await renderOnce();
+
+      await act(async () => {
+        setCursorLine?.(12);
+        await renderOnce();
+      });
+
+      const scrollbox = findScrollBoxRenderable(renderer.root);
+      expect(scrollbox).not.toBeNull();
+      if (!scrollbox) return;
+      const beforeExternalScroll = scrollbox.scrollTop;
+      expect(beforeExternalScroll).toBeGreaterThan(0);
+
+      const externalTop = beforeExternalScroll + 2;
+      scrollbox.scrollTop = externalTop;
+
+      await act(async () => {
+        setCursorLine?.(13);
+        await renderOnce();
+      });
+
+      expect(scrollbox.scrollTop).toBe(externalTop);
+    } finally {
+      if (mountedRenderer) {
+        await act(async () => {
+          mountedRenderer?.destroy();
+        });
+      }
+    }
   });
 
   it("reports clicked side in split mode", async () => {
