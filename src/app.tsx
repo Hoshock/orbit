@@ -56,7 +56,11 @@ import type {
   ReviewComment,
 } from "./types.ts";
 import { copyToClipboard } from "./utils/clipboard.ts";
-import { buildFileTree, flattenTree } from "./utils/file-tree.ts";
+import {
+  buildFileTree,
+  flattenTree,
+  getNodeFilePaths,
+} from "./utils/file-tree.ts";
 
 interface AppProps {
   files: DiffFile[];
@@ -397,7 +401,7 @@ export function App({
       }
       if (isBindingPressed(key, fileTreeKeys.toggleViewed)) {
         const row = flatRows[treeIndex];
-        if (row && row.fileIndex !== null && row.node.file) {
+        if (row?.node.file) {
           const path = row.node.file.path;
           setViewedFiles((prev) => {
             const next = new Set(prev);
@@ -408,6 +412,22 @@ export function App({
             }
             return next;
           });
+        } else if (row?.node.isDir) {
+          const dirFilePaths = getNodeFilePaths(row.node);
+          if (dirFilePaths.length > 0) {
+            setViewedFiles((prev) => {
+              const next = new Set(prev);
+              const allViewed = dirFilePaths.every((path) => next.has(path));
+              for (const path of dirFilePaths) {
+                if (allViewed) {
+                  next.delete(path);
+                } else {
+                  next.add(path);
+                }
+              }
+              return next;
+            });
+          }
         }
         return;
       }

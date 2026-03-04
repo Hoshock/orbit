@@ -9,7 +9,7 @@ import { act, createElement, useMemo, useState } from "react";
 import { App } from "../app.tsx";
 import { CommentList } from "../components/comment-list.tsx";
 import { DiffView } from "../components/diff-view.tsx";
-import { FileTree } from "../components/file-tree.tsx";
+import { FileTree, rowSegments } from "../components/file-tree.tsx";
 import { Header } from "../components/header.tsx";
 import { HelpBar } from "../components/help-bar.tsx";
 import { HomeScreen } from "../components/home-screen.tsx";
@@ -354,6 +354,25 @@ describe("FileTree component", () => {
     await renderOnce();
     expect(onOpen).toHaveBeenCalledWith(1);
   });
+
+  it("colors directory name when all descendant files are viewed", () => {
+    const files: DiffFile[] = [
+      makeFile({ path: "src/a.ts" }),
+      makeFile({ path: "src/nested/b.ts" }),
+    ];
+    const rows = flattenTree(buildFileTree(files), files, new Set<string>());
+    const srcRow = rows.find((row) => row.node.path === "src");
+    expect(srcRow).toBeDefined();
+    if (!srcRow) return;
+
+    const segs = rowSegments(
+      srcRow,
+      new Set<string>(),
+      new Map<string, number>(),
+      new Set(["src/a.ts", "src/nested/b.ts"]),
+    );
+    expect(segs.every((seg) => seg.color === COLORS.comment)).toBe(true);
+  });
 });
 
 // ── HomeScreen ──
@@ -614,6 +633,124 @@ describe("App integration", () => {
       });
       const frame = captureCharFrame();
       expect(frame).toContain("Prompt Preview");
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
+    }
+  });
+
+  it("toggles all descendant files viewed when toggling viewed on a directory", async () => {
+    commentStore.reset();
+    const files: DiffFile[] = [
+      makeFile({ path: "src/a.ts" }),
+      makeFile({ path: "src/nested/b.ts" }),
+      makeFile({ path: "z.ts" }),
+    ];
+
+    const { captureCharFrame, mockInput, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files,
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: false,
+            root: false,
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+      expect(captureCharFrame()).toContain("src/");
+
+      await act(async () => {
+        mockInput.pressKey("v");
+      });
+      await renderOnce();
+      await renderOnce();
+
+      let frame = captureCharFrame();
+      expect(frame).toContain("▾ src/");
+      expect(frame).not.toContain("✓ ▾ src/");
+      expect(frame).toContain("✓ b.ts");
+      expect(frame).toContain("✓ a.ts");
+      expect(frame).not.toContain("✓ z.ts");
+
+      await act(async () => {
+        mockInput.pressKey("v");
+      });
+      await renderOnce();
+      await renderOnce();
+
+      frame = captureCharFrame();
+      expect(frame).not.toContain("✓ ▾ src/");
+      expect(frame).not.toContain("✓ b.ts");
+      expect(frame).not.toContain("✓ a.ts");
+      expect(frame).not.toContain("✓ z.ts");
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
+    }
+  });
+
+  it("marks a directory viewed when all descendant files are toggled individually", async () => {
+    commentStore.reset();
+    const files: DiffFile[] = [
+      makeFile({ path: "src/a.ts" }),
+      makeFile({ path: "src/nested/b.ts" }),
+      makeFile({ path: "z.ts" }),
+    ];
+
+    const { captureCharFrame, mockInput, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files,
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: false,
+            root: false,
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+
+      await act(async () => {
+        mockInput.pressArrow("down"); // src/nested/
+      });
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressArrow("down"); // src/nested/b.ts
+      });
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressKey("v"); // mark b.ts
+      });
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressArrow("down"); // src/a.ts
+      });
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressKey("v"); // mark a.ts
+      });
+      await renderOnce();
+
+      const frame = captureCharFrame();
+      expect(frame).toContain("▾ src/");
+      expect(frame).not.toContain("✓ ▾ src/");
+      expect(frame).toContain("✓ b.ts");
+      expect(frame).toContain("✓ a.ts");
+      expect(frame).not.toContain("✓ z.ts");
     } finally {
       await act(async () => {
         renderer.destroy();

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { COLORS } from "../constants.ts";
 import type { ReviewComment } from "../types.ts";
 import type { FlatTreeRow } from "../utils/file-tree.ts";
+import { isNodeViewed } from "../utils/file-tree.ts";
 
 interface FileTreeProps {
   rows: FlatTreeRow[];
@@ -61,7 +62,7 @@ function sliceSegments(
 }
 
 /** Build segments for a row (with color info). */
-function rowSegments(
+export function rowSegments(
   row: FlatTreeRow,
   collapsedDirs: Set<string>,
   commentCounts: Map<string, number>,
@@ -70,20 +71,25 @@ function rowSegments(
   const { node } = row;
   const indent = "  ".repeat(node.depth);
   const name = node.isDir ? `${node.name}/` : node.name;
+  const viewed = isNodeViewed(node, viewedFiles);
+  const viewedColor = viewed ? COLORS.comment : undefined;
 
-  if (!node.file) {
+  if (node.isDir) {
     const dirIcon = collapsedDirs.has(node.path) ? "\u25B8 " : "\u25BE ";
-    return [{ text: `${indent}${dirIcon}${name}` }];
+    return [
+      { text: `${indent}`, color: viewedColor },
+      { text: dirIcon, color: viewedColor },
+      { text: name, color: viewedColor },
+    ];
   }
 
-  const viewed = viewedFiles.has(node.file.path);
   const check = viewed ? "\u2713 " : "  ";
   const segments: Segment[] = [
-    { text: `${indent}`, color: viewed ? COLORS.comment : undefined },
-    { text: check, color: viewed ? COLORS.comment : undefined },
+    { text: `${indent}`, color: viewedColor },
+    { text: check, color: viewedColor },
     {
       text: `${name}  `,
-      color: viewed ? COLORS.comment : undefined,
+      color: viewedColor,
     },
     { text: `+${node.file.additions}`, color: COLORS.addition },
     { text: " " },

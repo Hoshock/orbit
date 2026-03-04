@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { DiffFile } from "../types.ts";
-import { buildFileTree, flattenTree } from "../utils/file-tree.ts";
+import {
+  buildFileTree,
+  flattenTree,
+  getNodeFilePaths,
+  isNodeViewed,
+} from "../utils/file-tree.ts";
 
 function makeFile(path: string, status = "modified"): DiffFile {
   return {
@@ -116,5 +121,33 @@ describe("flattenTree", () => {
     for (const row of fileRows) {
       expect(files[row.fileIndex!]!.path).toBe(row.node.path);
     }
+  });
+});
+
+describe("tree viewed helpers", () => {
+  const files = [
+    makeFile("src/a.ts"),
+    makeFile("src/nested/b.ts"),
+    makeFile("README.md"),
+  ];
+  const tree = buildFileTree(files);
+
+  it("collects descendant file paths for directory nodes", () => {
+    const srcDir = tree.find((n) => n.path === "src");
+    expect(srcDir).toBeDefined();
+    if (!srcDir) return;
+
+    expect(getNodeFilePaths(srcDir)).toEqual(["src/nested/b.ts", "src/a.ts"]);
+  });
+
+  it("treats directories as viewed only when all descendants are viewed", () => {
+    const srcDir = tree.find((n) => n.path === "src");
+    expect(srcDir).toBeDefined();
+    if (!srcDir) return;
+
+    expect(isNodeViewed(srcDir, new Set(["src/a.ts"]))).toBe(false);
+    expect(isNodeViewed(srcDir, new Set(["src/a.ts", "src/nested/b.ts"]))).toBe(
+      true,
+    );
   });
 });

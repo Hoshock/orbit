@@ -14,6 +14,32 @@ export interface FlatTreeRow {
   fileIndex: number | null;
 }
 
+export function getNodeFilePaths(node: FileTreeNode): string[] {
+  const paths: string[] = [];
+
+  function walk(cur: FileTreeNode) {
+    if (cur.file) {
+      paths.push(cur.file.path);
+      return;
+    }
+    for (const child of cur.children) {
+      walk(child);
+    }
+  }
+
+  walk(node);
+  return paths;
+}
+
+export function isNodeViewed(
+  node: FileTreeNode,
+  viewedFiles: Set<string>,
+): boolean {
+  const paths = getNodeFilePaths(node);
+  if (paths.length === 0) return false;
+  return paths.every((path) => viewedFiles.has(path));
+}
+
 function sortNodes(nodes: FileTreeNode[]): void {
   nodes.sort((a, b) => {
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
