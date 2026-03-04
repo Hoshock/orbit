@@ -93,6 +93,7 @@ export function HomeScreen({
       </box>
       <DiffPreview
         file={previewFile}
+        comments={comments}
         splitMode={previewSplitMode}
         width={previewWidth}
         height={panelHeight}

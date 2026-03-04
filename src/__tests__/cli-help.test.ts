@@ -40,6 +40,8 @@ describe("orbit --help", () => {
     expect(stdout).toContain("v toggle viewed");
     expect(stdout).toContain("c comment list");
     expect(stdout).toContain("p prompt preview");
+    expect(stdout).toContain("z fold-step");
+    expect(stdout).toContain("Z fold-all");
     expect(stdout).not.toContain("Space toggle viewed");
   });
 

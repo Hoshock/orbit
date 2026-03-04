@@ -358,7 +358,8 @@ export function DiffView({
       Math.floor(scrollRef.current?.scrollTop ?? scrollTopRef.current),
     );
     scrollTopRef.current = currentTop;
-    const line = currentTop + event.y + 1;
+    // OpenTUI mouse local `y` is 1-based inside renderables.
+    const line = currentTop + event.y;
     const clampedLine = Math.min(Math.max(1, line), totalLines);
     if (splitMode) {
       const clickedSide: "old" | "new" =

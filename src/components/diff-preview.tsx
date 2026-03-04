@@ -1,26 +1,44 @@
-import { getTreeSitterClient } from "@opentui/core";
-import { useMemo } from "react";
+import { type DiffRenderable, getTreeSitterClient } from "@opentui/core";
+import { useEffect, useMemo, useRef } from "react";
 import { COLORS } from "../constants.ts";
 import { collapseDiff } from "../data/diff-collapse.ts";
+import {
+  sourceLineToDisplayLine,
+  sourceLineToDisplayLineSplit,
+} from "../data/diff-parser.ts";
 import { syntaxStyle } from "../theme.ts";
-import type { DiffFile } from "../types.ts";
+import type { DiffFile, ReviewComment } from "../types.ts";
 import { getFiletype } from "../utils/filetype.ts";
 
 interface DiffPreviewProps {
   file: DiffFile | null;
+  comments: ReviewComment[];
   splitMode: boolean;
   width: number;
   height: number;
   expandedFolds?: Map<number, number>;
 }
 
+type LineColorTarget = {
+  setLineColor: (line: number, color: string) => void;
+};
+
+type DiffRuntime = DiffRenderable & {
+  buildView?: () => void;
+  pendingRebuild?: boolean;
+  leftSide?: LineColorTarget;
+  rightSide?: LineColorTarget;
+};
+
 export function DiffPreview({
   file,
+  comments,
   splitMode,
   width,
   height,
   expandedFolds,
 }: DiffPreviewProps) {
+  const diffRef = useRef<DiffRuntime | null>(null);
   const treeSitterClient = useMemo(
     () =>
       process.env.ORBIT_DISABLE_TREESITTER === "1"
@@ -37,6 +55,52 @@ export function DiffPreview({
         : "",
     [file?.rawDiff, file, expandedFolds, markerWidth],
   );
+  const fileComments = useMemo(
+    () => (file ? comments.filter((c) => c.filePath === file.path) : []),
+    [comments, file?.path, file],
+  );
+
+  useEffect(() => {
+    if (!file) return;
+    const diff = diffRef.current;
+    if (!diff) return;
+
+    if (typeof diff.buildView === "function") {
+      diff.buildView();
+      if ("pendingRebuild" in diff) diff.pendingRebuild = false;
+    }
+
+    const toDisplayLine = splitMode
+      ? sourceLineToDisplayLineSplit
+      : sourceLineToDisplayLine;
+    const setColor = (line: number, side: "old" | "new") => {
+      const displayLine = toDisplayLine(collapsedDiff, line, side);
+      if (!displayLine) return;
+      if (!splitMode) {
+        diff.setLineColor(displayLine - 1, COLORS.commentHighlight);
+        return;
+      }
+      if (side === "old") {
+        diff.leftSide?.setLineColor(displayLine - 1, COLORS.commentHighlight);
+      } else {
+        diff.rightSide?.setLineColor(displayLine - 1, COLORS.commentHighlight);
+      }
+    };
+
+    for (const c of fileComments) {
+      if (typeof c.position.line === "number") {
+        if (c.position.line > 0) setColor(c.position.line, c.position.side);
+      } else {
+        for (
+          let line = c.position.line.start;
+          line <= c.position.line.end;
+          line++
+        ) {
+          setColor(line, c.position.side);
+        }
+      }
+    }
+  }, [file, fileComments, splitMode, collapsedDiff]);
 
   if (!file) {
     return (
@@ -58,6 +122,7 @@ export function DiffPreview({
       </text>
       <scrollbox height={height - 1} width={width}>
         <diff
+          ref={diffRef}
           diff={collapsedDiff}
           view={splitMode ? "split" : "unified"}
           wrapMode="none"

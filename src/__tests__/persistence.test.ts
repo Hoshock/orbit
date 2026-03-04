@@ -177,12 +177,13 @@ describe("orbit config", () => {
     writeFileSync(
       configPath,
       [
-        "file_tree_initial_width = 0.3",
-        'initial_view = "split"',
+        "file-tree-initial-width = 0.3",
+        'initial-view = "split"',
+        "incremental-fold-lines = 7",
         "",
         "[keybindings.file-tree]",
-        'prompt_preview = "o"',
-        'toggle_view_mode = "m"',
+        'prompt-preview = "o"',
+        'toggle-view-mode = "m"',
         "",
         "[keybindings.diff-view]",
         'comment = "x"',
@@ -192,6 +193,7 @@ describe("orbit config", () => {
     const loaded = loadOrbitConfig(configPath);
     expect(loaded.fileTreeInitialWidth).toBe(0.3);
     expect(loaded.initialView).toBe("split");
+    expect(loaded.incrementalFoldLines).toBe(7);
     expect(loaded.keybindings.fileTree.promptPreview).toBe("o");
     expect(loaded.keybindings.fileTree.toggleViewMode).toBe("m");
     expect(loaded.keybindings.diffView.comment).toBe("x");
@@ -203,18 +205,20 @@ describe("orbit config", () => {
     writeFileSync(
       configPath,
       [
-        "file_tree_initial_width = 0.2",
-        'initial_view = "unified"',
+        "file-tree-initial-width = 0.2",
+        'initial-view = "unified"',
+        "incremental-fold-lines = 11",
         "",
         "[keybindings]",
-        'prompt_preview = "o"',
-        'toggle_view_mode = "m"',
+        'prompt-preview = "o"',
+        'toggle-view-mode = "m"',
       ].join("\n"),
     );
 
     const loaded = loadOrbitConfig(configPath);
     expect(loaded.keybindings.fileTree.promptPreview).toBe("p");
     expect(loaded.keybindings.fileTree.toggleViewMode).toBe("t");
+    expect(loaded.incrementalFoldLines).toBe(11);
   });
 
   it("saves config as TOML", () => {
@@ -235,10 +239,13 @@ describe("orbit config", () => {
     );
 
     const text = readFileSync(configPath, "utf-8");
-    expect(text).toContain("file_tree_initial_width = 0.35");
-    expect(text).toContain('initial_view = "split"');
+    expect(text).toContain("file-tree-initial-width = 0.35");
+    expect(text).toContain('initial-view = "split"');
+    expect(text).toContain(
+      `incremental-fold-lines = ${DEFAULT_ORBIT_CONFIG.incrementalFoldLines}`,
+    );
     expect(text).toContain("[keybindings.file-tree]");
-    expect(text).toContain('prompt_preview = "o"');
+    expect(text).toContain('prompt-preview = "o"');
     expect(text).toContain("[keybindings.diff-view]");
   });
 

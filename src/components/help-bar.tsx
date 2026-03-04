@@ -15,6 +15,11 @@ function displayKey(key: string): string {
   return key;
 }
 
+function displayShiftKey(key: string): string {
+  if (/^[a-z]$/i.test(key)) return key.toUpperCase();
+  return `Shift+${displayKey(key)}`;
+}
+
 export function HelpBar({ mode, flash, splitMode, keybindings }: HelpBarProps) {
   const { width } = useTerminalDimensions();
   const k = keybindings ?? DEFAULT_ORBIT_KEYBINDINGS;
@@ -22,6 +27,8 @@ export function HelpBar({ mode, flash, splitMode, keybindings }: HelpBarProps) {
   const diffView = k.diffView;
   const commentList = k.commentList;
   const promptPreview = k.promptPreview;
+  const foldStepKey = displayKey(diffView.fold);
+  const foldAllKey = displayShiftKey(diffView.fold);
   const resizeKeys =
     fileTree.treeShrink === "[" && fileTree.treeGrow === "]"
       ? "[]"
@@ -42,8 +49,8 @@ export function HelpBar({ mode, flash, splitMode, keybindings }: HelpBarProps) {
       : `Esc/${displayKey(fileTree.quit)}:quit  \u2191\u2193:move  \u2190\u2192:open/close  ${resizeKeys}:resize  Enter:diff  ${displayKey(fileTree.commentList)}:comment-list  ${displayKey(fileTree.promptPreview)}:prompt-preview  ${displayKey(fileTree.toggleViewMode)}:split  ${displayKey(fileTree.toggleViewed)}:viewed`;
   } else if (mode === "diff-view") {
     helpText = splitMode
-      ? `Esc/${displayKey(diffView.quit)}:back  \u2191\u2193:line  \u2190\u2192:side  Shift+\u2191\u2193:select  ${displayKey(diffView.comment)}:comment  ${displayKey(diffView.deleteComment)}:delete-comment  ${displayKey(diffView.editComment)}:edit-comment  ${displayKey(diffView.fileComment)}:file-comment  ${displayKey(diffView.toggleViewMode)}:unified  ${displayKey(diffView.toggleViewed)}:viewed  ${displayKey(diffView.fold)}:fold/unfold`
-      : `Esc/${displayKey(diffView.quit)}:back  \u2191\u2193:line  Shift+\u2191\u2193:select  ${displayKey(diffView.comment)}:comment  ${displayKey(diffView.deleteComment)}:delete-comment  ${displayKey(diffView.editComment)}:edit-comment  ${displayKey(diffView.fileComment)}:file-comment  ${displayKey(diffView.toggleViewMode)}:split  ${displayKey(diffView.toggleViewed)}:viewed  ${displayKey(diffView.fold)}:fold/unfold`;
+      ? `Esc/${displayKey(diffView.quit)}:back  \u2191\u2193:line  \u2190\u2192:side  Shift+\u2191\u2193:select  ${displayKey(diffView.comment)}:comment  ${displayKey(diffView.deleteComment)}:delete-comment  ${displayKey(diffView.editComment)}:edit-comment  ${displayKey(diffView.fileComment)}:file-comment  ${displayKey(diffView.toggleViewMode)}:unified  ${displayKey(diffView.toggleViewed)}:viewed  ${foldStepKey}:fold-step  ${foldAllKey}:fold-all`
+      : `Esc/${displayKey(diffView.quit)}:back  \u2191\u2193:line  Shift+\u2191\u2193:select  ${displayKey(diffView.comment)}:comment  ${displayKey(diffView.deleteComment)}:delete-comment  ${displayKey(diffView.editComment)}:edit-comment  ${displayKey(diffView.fileComment)}:file-comment  ${displayKey(diffView.toggleViewMode)}:split  ${displayKey(diffView.toggleViewed)}:viewed  ${foldStepKey}:fold-step  ${foldAllKey}:fold-all`;
   } else if (mode === "comment-input") {
     helpText = "Esc:cancel  Ctrl+Enter:submit";
   } else if (mode === "comment-list") {

@@ -75,7 +75,7 @@ Keybindings:
   diff-view:  \u2191\u2193 move lines  Shift+\u2191\u2193 select range
               \u2190\u2192 switch side (split)  c comment on line/selection
               d delete comment  e edit comment  f file comment
-              t split/unified  v toggle viewed  z fold/unfold
+              t split/unified  v toggle viewed  z fold-step  Z fold-all
               Esc/q back
   comment:    Ctrl+Enter submit  Esc cancel
   comments:   Enter jump  e edit  d delete  Esc back

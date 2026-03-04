@@ -21,6 +21,7 @@ import {
   displayLineToSourceLineSplit,
   getDiffLineType,
   getDisplayLineCount,
+  sourceLineToDisplayLine,
 } from "../data/diff-parser.ts";
 import {
   DEFAULT_ORBIT_CONFIG,
@@ -423,6 +424,81 @@ describe("HomeScreen component", () => {
     expect(frame).toContain("src/main.py");
     expect(frame).toContain("+10/-5");
   });
+
+  it("highlights commented lines in preview", async () => {
+    let setComments: ((comments: ReviewComment[]) => void) | null = null;
+    let mountedRenderer: { destroy: () => void } | null = null;
+    let restoreSetLineColor: (() => void) | null = null;
+    const setLineColorCalls: Array<{ line: number; color: DiffLineColor }> = [];
+
+    function Harness() {
+      const [comments, updateComments] = useState<ReviewComment[]>([]);
+      setComments = updateComments;
+      return createElement(HomeScreen, {
+        files,
+        rows,
+        selectedIndex: 1,
+        comments,
+        viewedFiles: new Set<string>(),
+        collapsedDirs: new Set<string>(),
+        previewSplitMode: false,
+        treePercent: 0.3,
+        expandedFolds: new Map<string, Map<number, number>>(),
+        onTreeResize: () => {},
+        onSelectRow: () => {},
+        onOpenFile: () => {},
+      });
+    }
+
+    try {
+      const { renderOnce, renderer } = await testRender(
+        createElement(Harness),
+        RENDER_OPTS,
+      );
+      mountedRenderer = renderer;
+      await renderOnce();
+
+      const diffNode = findDiffRenderable(renderer.root);
+      expect(diffNode).not.toBeNull();
+      if (!diffNode) return;
+
+      const originalSetLineColor = diffNode.setLineColor.bind(diffNode);
+      diffNode.setLineColor = (line: number, color: DiffLineColor) => {
+        setLineColorCalls.push({ line, color });
+        originalSetLineColor(line, color);
+      };
+      restoreSetLineColor = () => {
+        diffNode.setLineColor = originalSetLineColor;
+      };
+
+      await act(async () => {
+        setComments?.([
+          makeComment({
+            filePath: "src/main.py",
+            position: { side: "new", line: 5 },
+          }),
+        ]);
+        await renderOnce();
+      });
+
+      const displayLine = sourceLineToDisplayLine(files[0]!.rawDiff, 5, "new");
+      expect(displayLine).not.toBeNull();
+      if (!displayLine) return;
+
+      const highlighted = setLineColorCalls.some(
+        (c) =>
+          c.line === displayLine - 1 && c.color === COLORS.commentHighlight,
+      );
+      expect(highlighted).toBeTrue();
+    } finally {
+      if (restoreSetLineColor) restoreSetLineColor();
+      if (mountedRenderer) {
+        await act(async () => {
+          mountedRenderer?.destroy();
+        });
+      }
+    }
+  });
 });
 
 // ── App integration ──
@@ -735,7 +811,7 @@ describe("App integration", () => {
       });
 
       await act(async () => {
-        await mockMouse.click(70, 2);
+        await mockMouse.click(70, 3);
         await renderOnce();
       });
 
@@ -802,7 +878,7 @@ describe("App integration", () => {
       });
 
       await act(async () => {
-        await mockMouse.click(5, 2);
+        await mockMouse.click(5, 3);
         await renderOnce();
       });
 
@@ -887,8 +963,8 @@ describe("App integration", () => {
     const tmpRoot = mkdtempSync(join(tmpdir(), "orbit-config-preserve-"));
     const configPath = join(tmpRoot, "config.toml");
     const originalConfig = [
-      "file_tree_initial_width = 0.2",
-      'initial_view = "unified"',
+      "file-tree-initial-width = 0.2",
+      'initial-view = "unified"',
       "",
     ].join("\n");
     writeFileSync(configPath, originalConfig);
@@ -1027,7 +1103,7 @@ describe("DiffView component", () => {
       expect(onCursorChange).toHaveBeenCalledTimes(1);
       const calledLine = onCursorChange.mock.calls[0]![0];
       expect(Number.isInteger(calledLine)).toBeTrue();
-      expect(calledLine).toBe(Math.floor(appliedTop) + 3);
+      expect(calledLine).toBe(Math.floor(appliedTop) + 2);
     } finally {
       if (mountedRenderer) {
         await act(async () => {
@@ -1166,11 +1242,11 @@ describe("DiffView component", () => {
     );
     await renderOnce();
 
-    await mockMouse.click(70, paddedOnNew - 1);
+    await mockMouse.click(70, paddedOnNew);
     await renderOnce();
     expect(onCursorChange).not.toHaveBeenCalled();
 
-    await mockMouse.click(5, paddedOnNew - 1);
+    await mockMouse.click(5, paddedOnNew);
     await renderOnce();
     expect(onCursorChange).toHaveBeenCalledTimes(1);
     expect(onCursorChange.mock.calls[0]![0]).toBe(paddedOnNew);

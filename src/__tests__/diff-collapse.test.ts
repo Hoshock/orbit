@@ -257,7 +257,7 @@ describe("fold markers", () => {
       .find((l) => l.includes(FOLD_MARKER_PATTERN));
     expect(markerLine).toBeDefined();
     expect(markerLine).toContain("4 lines hidden");
-    expect(markerLine).toContain("z to expand");
+    expect(markerLine).toContain("z/Z to expand");
   });
 
   it("tracks marker display line positions", () => {

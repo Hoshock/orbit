@@ -7,7 +7,7 @@ const MIN_FOLDABLE = CONTEXT_LINES * 2 + 1;
 export const FOLD_CHUNK_SIZE = 20;
 
 /** Substring used to identify fold marker lines in the diff output. */
-export const FOLD_MARKER_PATTERN = " lines hidden (z to expand) ";
+export const FOLD_MARKER_PATTERN = " lines hidden (z/Z to expand) ";
 
 export interface FoldRegion {
   id: number;

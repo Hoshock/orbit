@@ -6,6 +6,7 @@ import type {
   OrbitKeybindings,
   ReviewComment,
 } from "../types.ts";
+import { FOLD_CHUNK_SIZE } from "./diff-collapse.ts";
 
 interface SessionPersistenceData {
   comments?: ReviewComment[];
@@ -53,6 +54,7 @@ export const DEFAULT_ORBIT_KEYBINDINGS: OrbitKeybindings = {
 export const DEFAULT_ORBIT_CONFIG: OrbitConfig = {
   fileTreeInitialWidth: 0.2,
   initialView: "unified",
+  incrementalFoldLines: FOLD_CHUNK_SIZE,
   keybindings: DEFAULT_ORBIT_KEYBINDINGS,
 };
 
@@ -166,6 +168,15 @@ function normalizeTreeWidth(value: unknown): number {
   return value;
 }
 
+function normalizeIncrementalFoldLines(value: unknown): number {
+  if (typeof value !== "number")
+    return DEFAULT_ORBIT_CONFIG.incrementalFoldLines;
+  if (!Number.isFinite(value)) return DEFAULT_ORBIT_CONFIG.incrementalFoldLines;
+  const normalized = Math.floor(value);
+  if (normalized < 1) return DEFAULT_ORBIT_CONFIG.incrementalFoldLines;
+  return normalized;
+}
+
 function normalizeKeybinding(value: unknown, fallback: string): string {
   if (typeof value !== "string") return fallback;
   const normalized = value.trim().toLowerCase();
@@ -230,34 +241,19 @@ export function loadOrbitConfig(
     const keybindingsRoot = toConfigObject(conf.keybindings);
 
     // Format: [keybindings.file-tree], [keybindings.diff-view], ...
-    const fileTree = pickNestedTable(
-      keybindingsRoot,
-      "file-tree",
-      "file_tree",
-      "fileTree",
-    );
-    const diffView = pickNestedTable(
-      keybindingsRoot,
-      "diff-view",
-      "diff_view",
-      "diffView",
-    );
-    const commentList = pickNestedTable(
-      keybindingsRoot,
-      "comment-list",
-      "comment_list",
-      "commentList",
-    );
-    const promptPreview = pickNestedTable(
-      keybindingsRoot,
-      "prompt-preview",
-      "prompt_preview",
-      "promptPreview",
-    );
+    const fileTree = pickNestedTable(keybindingsRoot, "file-tree");
+    const diffView = pickNestedTable(keybindingsRoot, "diff-view");
+    const commentList = pickNestedTable(keybindingsRoot, "comment-list");
+    const promptPreview = pickNestedTable(keybindingsRoot, "prompt-preview");
 
     return {
-      fileTreeInitialWidth: normalizeTreeWidth(conf.file_tree_initial_width),
-      initialView: normalizeInitialView(conf.initial_view),
+      fileTreeInitialWidth: normalizeTreeWidth(
+        pickValue(conf, ["file-tree-initial-width"]),
+      ),
+      initialView: normalizeInitialView(pickValue(conf, ["initial-view"])),
+      incrementalFoldLines: normalizeIncrementalFoldLines(
+        pickValue(conf, ["incremental-fold-lines"]),
+      ),
       keybindings: {
         fileTree: {
           quit: normalizeKeybinding(
@@ -265,27 +261,27 @@ export function loadOrbitConfig(
             DEFAULT_ORBIT_KEYBINDINGS.fileTree.quit,
           ),
           commentList: normalizeKeybinding(
-            pickValue(fileTree, ["comment_list", "commentList"]),
+            pickValue(fileTree, ["comment-list"]),
             DEFAULT_ORBIT_KEYBINDINGS.fileTree.commentList,
           ),
           promptPreview: normalizeKeybinding(
-            pickValue(fileTree, ["prompt_preview", "promptPreview"]),
+            pickValue(fileTree, ["prompt-preview"]),
             DEFAULT_ORBIT_KEYBINDINGS.fileTree.promptPreview,
           ),
           toggleViewMode: normalizeKeybinding(
-            pickValue(fileTree, ["toggle_view_mode", "toggleViewMode"]),
+            pickValue(fileTree, ["toggle-view-mode"]),
             DEFAULT_ORBIT_KEYBINDINGS.fileTree.toggleViewMode,
           ),
           toggleViewed: normalizeKeybinding(
-            pickValue(fileTree, ["toggle_viewed", "toggleViewed"]),
+            pickValue(fileTree, ["toggle-viewed"]),
             DEFAULT_ORBIT_KEYBINDINGS.fileTree.toggleViewed,
           ),
           treeShrink: normalizeKeybinding(
-            pickValue(fileTree, ["tree_shrink", "treeShrink"]),
+            pickValue(fileTree, ["tree-shrink"]),
             DEFAULT_ORBIT_KEYBINDINGS.fileTree.treeShrink,
           ),
           treeGrow: normalizeKeybinding(
-            pickValue(fileTree, ["tree_grow", "treeGrow"]),
+            pickValue(fileTree, ["tree-grow"]),
             DEFAULT_ORBIT_KEYBINDINGS.fileTree.treeGrow,
           ),
         },
@@ -299,23 +295,23 @@ export function loadOrbitConfig(
             DEFAULT_ORBIT_KEYBINDINGS.diffView.comment,
           ),
           deleteComment: normalizeKeybinding(
-            pickValue(diffView, ["delete_comment", "deleteComment"]),
+            pickValue(diffView, ["delete-comment"]),
             DEFAULT_ORBIT_KEYBINDINGS.diffView.deleteComment,
           ),
           editComment: normalizeKeybinding(
-            pickValue(diffView, ["edit_comment", "editComment"]),
+            pickValue(diffView, ["edit-comment"]),
             DEFAULT_ORBIT_KEYBINDINGS.diffView.editComment,
           ),
           fileComment: normalizeKeybinding(
-            pickValue(diffView, ["file_comment", "fileComment"]),
+            pickValue(diffView, ["file-comment"]),
             DEFAULT_ORBIT_KEYBINDINGS.diffView.fileComment,
           ),
           toggleViewMode: normalizeKeybinding(
-            pickValue(diffView, ["toggle_view_mode", "toggleViewMode"]),
+            pickValue(diffView, ["toggle-view-mode"]),
             DEFAULT_ORBIT_KEYBINDINGS.diffView.toggleViewMode,
           ),
           toggleViewed: normalizeKeybinding(
-            pickValue(diffView, ["toggle_viewed", "toggleViewed"]),
+            pickValue(diffView, ["toggle-viewed"]),
             DEFAULT_ORBIT_KEYBINDINGS.diffView.toggleViewed,
           ),
           fold: normalizeKeybinding(
@@ -329,11 +325,11 @@ export function loadOrbitConfig(
             DEFAULT_ORBIT_KEYBINDINGS.commentList.quit,
           ),
           deleteComment: normalizeKeybinding(
-            pickValue(commentList, ["delete_comment", "deleteComment"]),
+            pickValue(commentList, ["delete-comment"]),
             DEFAULT_ORBIT_KEYBINDINGS.commentList.deleteComment,
           ),
           editComment: normalizeKeybinding(
-            pickValue(commentList, ["edit_comment", "editComment"]),
+            pickValue(commentList, ["edit-comment"]),
             DEFAULT_ORBIT_KEYBINDINGS.commentList.editComment,
           ),
         },
@@ -343,7 +339,7 @@ export function loadOrbitConfig(
             DEFAULT_ORBIT_KEYBINDINGS.promptPreview.quit,
           ),
           copyPrompt: normalizeKeybinding(
-            pickValue(promptPreview, ["copy_prompt", "copyPrompt"]),
+            pickValue(promptPreview, ["copy-prompt"]),
             DEFAULT_ORBIT_KEYBINDINGS.promptPreview.copyPrompt,
           ),
         },
@@ -367,39 +363,43 @@ export function saveOrbitConfig(
     const width =
       Math.round(normalizeTreeWidth(config.fileTreeInitialWidth) * 100) / 100;
     const view = normalizeInitialView(config.initialView);
+    const incrementalFoldLines = normalizeIncrementalFoldLines(
+      config.incrementalFoldLines,
+    );
     const k = config.keybindings;
     const toml = [
       "# orbit custom configuration",
-      `file_tree_initial_width = ${width}`,
-      `initial_view = ${tomlString(view)}`,
+      `file-tree-initial-width = ${width}`,
+      `initial-view = ${tomlString(view)}`,
+      `incremental-fold-lines = ${incrementalFoldLines}`,
       "",
       "[keybindings.file-tree]",
       `quit = ${tomlString(normalizeKeybinding(k.fileTree.quit, DEFAULT_ORBIT_KEYBINDINGS.fileTree.quit))}`,
-      `tree_shrink = ${tomlString(normalizeKeybinding(k.fileTree.treeShrink, DEFAULT_ORBIT_KEYBINDINGS.fileTree.treeShrink))}`,
-      `tree_grow = ${tomlString(normalizeKeybinding(k.fileTree.treeGrow, DEFAULT_ORBIT_KEYBINDINGS.fileTree.treeGrow))}`,
-      `comment_list = ${tomlString(normalizeKeybinding(k.fileTree.commentList, DEFAULT_ORBIT_KEYBINDINGS.fileTree.commentList))}`,
-      `prompt_preview = ${tomlString(normalizeKeybinding(k.fileTree.promptPreview, DEFAULT_ORBIT_KEYBINDINGS.fileTree.promptPreview))}`,
-      `toggle_view_mode = ${tomlString(normalizeKeybinding(k.fileTree.toggleViewMode, DEFAULT_ORBIT_KEYBINDINGS.fileTree.toggleViewMode))}`,
-      `toggle_viewed = ${tomlString(normalizeKeybinding(k.fileTree.toggleViewed, DEFAULT_ORBIT_KEYBINDINGS.fileTree.toggleViewed))}`,
+      `tree-shrink = ${tomlString(normalizeKeybinding(k.fileTree.treeShrink, DEFAULT_ORBIT_KEYBINDINGS.fileTree.treeShrink))}`,
+      `tree-grow = ${tomlString(normalizeKeybinding(k.fileTree.treeGrow, DEFAULT_ORBIT_KEYBINDINGS.fileTree.treeGrow))}`,
+      `comment-list = ${tomlString(normalizeKeybinding(k.fileTree.commentList, DEFAULT_ORBIT_KEYBINDINGS.fileTree.commentList))}`,
+      `prompt-preview = ${tomlString(normalizeKeybinding(k.fileTree.promptPreview, DEFAULT_ORBIT_KEYBINDINGS.fileTree.promptPreview))}`,
+      `toggle-view-mode = ${tomlString(normalizeKeybinding(k.fileTree.toggleViewMode, DEFAULT_ORBIT_KEYBINDINGS.fileTree.toggleViewMode))}`,
+      `toggle-viewed = ${tomlString(normalizeKeybinding(k.fileTree.toggleViewed, DEFAULT_ORBIT_KEYBINDINGS.fileTree.toggleViewed))}`,
       "",
       "[keybindings.diff-view]",
       `quit = ${tomlString(normalizeKeybinding(k.diffView.quit, DEFAULT_ORBIT_KEYBINDINGS.diffView.quit))}`,
       `comment = ${tomlString(normalizeKeybinding(k.diffView.comment, DEFAULT_ORBIT_KEYBINDINGS.diffView.comment))}`,
-      `delete_comment = ${tomlString(normalizeKeybinding(k.diffView.deleteComment, DEFAULT_ORBIT_KEYBINDINGS.diffView.deleteComment))}`,
-      `edit_comment = ${tomlString(normalizeKeybinding(k.diffView.editComment, DEFAULT_ORBIT_KEYBINDINGS.diffView.editComment))}`,
-      `file_comment = ${tomlString(normalizeKeybinding(k.diffView.fileComment, DEFAULT_ORBIT_KEYBINDINGS.diffView.fileComment))}`,
-      `toggle_view_mode = ${tomlString(normalizeKeybinding(k.diffView.toggleViewMode, DEFAULT_ORBIT_KEYBINDINGS.diffView.toggleViewMode))}`,
-      `toggle_viewed = ${tomlString(normalizeKeybinding(k.diffView.toggleViewed, DEFAULT_ORBIT_KEYBINDINGS.diffView.toggleViewed))}`,
+      `delete-comment = ${tomlString(normalizeKeybinding(k.diffView.deleteComment, DEFAULT_ORBIT_KEYBINDINGS.diffView.deleteComment))}`,
+      `edit-comment = ${tomlString(normalizeKeybinding(k.diffView.editComment, DEFAULT_ORBIT_KEYBINDINGS.diffView.editComment))}`,
+      `file-comment = ${tomlString(normalizeKeybinding(k.diffView.fileComment, DEFAULT_ORBIT_KEYBINDINGS.diffView.fileComment))}`,
+      `toggle-view-mode = ${tomlString(normalizeKeybinding(k.diffView.toggleViewMode, DEFAULT_ORBIT_KEYBINDINGS.diffView.toggleViewMode))}`,
+      `toggle-viewed = ${tomlString(normalizeKeybinding(k.diffView.toggleViewed, DEFAULT_ORBIT_KEYBINDINGS.diffView.toggleViewed))}`,
       `fold = ${tomlString(normalizeKeybinding(k.diffView.fold, DEFAULT_ORBIT_KEYBINDINGS.diffView.fold))}`,
       "",
       "[keybindings.comment-list]",
       `quit = ${tomlString(normalizeKeybinding(k.commentList.quit, DEFAULT_ORBIT_KEYBINDINGS.commentList.quit))}`,
-      `delete_comment = ${tomlString(normalizeKeybinding(k.commentList.deleteComment, DEFAULT_ORBIT_KEYBINDINGS.commentList.deleteComment))}`,
-      `edit_comment = ${tomlString(normalizeKeybinding(k.commentList.editComment, DEFAULT_ORBIT_KEYBINDINGS.commentList.editComment))}`,
+      `delete-comment = ${tomlString(normalizeKeybinding(k.commentList.deleteComment, DEFAULT_ORBIT_KEYBINDINGS.commentList.deleteComment))}`,
+      `edit-comment = ${tomlString(normalizeKeybinding(k.commentList.editComment, DEFAULT_ORBIT_KEYBINDINGS.commentList.editComment))}`,
       "",
       "[keybindings.prompt-preview]",
       `quit = ${tomlString(normalizeKeybinding(k.promptPreview.quit, DEFAULT_ORBIT_KEYBINDINGS.promptPreview.quit))}`,
-      `copy_prompt = ${tomlString(normalizeKeybinding(k.promptPreview.copyPrompt, DEFAULT_ORBIT_KEYBINDINGS.promptPreview.copyPrompt))}`,
+      `copy-prompt = ${tomlString(normalizeKeybinding(k.promptPreview.copyPrompt, DEFAULT_ORBIT_KEYBINDINGS.promptPreview.copyPrompt))}`,
       "",
     ].join("\n");
     writeFileSync(configPath, toml);

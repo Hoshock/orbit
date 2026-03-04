@@ -21,7 +21,7 @@ import { HelpBar } from "./components/help-bar.tsx";
 import { HomeScreen } from "./components/home-screen.tsx";
 import { PromptPreview } from "./components/prompt-preview.tsx";
 import { commentStore } from "./data/comment-store.ts";
-import { collapseDiff, FOLD_CHUNK_SIZE } from "./data/diff-collapse.ts";
+import { collapseDiff } from "./data/diff-collapse.ts";
 import {
   buildSplitDisplayLineTypeMap,
   displayLineToSourceLine,
@@ -37,6 +37,11 @@ import {
   sourceLineToDisplayLine,
   sourceLineToDisplayLineSplit,
 } from "./data/diff-parser.ts";
+import {
+  getExpandChunk,
+  isFoldAllRequested,
+  isKeybindingPressed,
+} from "./data/fold-controls.ts";
 import {
   DEFAULT_ORBIT_CONFIG,
   saveSessionPrefs,
@@ -68,12 +73,7 @@ function isBindingPressed(
   key: { name?: string; raw?: string },
   binding: string,
 ): boolean {
-  const normalized = binding.trim().toLowerCase();
-  if (normalized.length === 0) return false;
-  return (
-    key.name?.toLowerCase() === normalized ||
-    key.raw?.toLowerCase() === normalized
-  );
+  return isKeybindingPressed(key, binding);
 }
 
 export function App({
@@ -155,6 +155,8 @@ export function App({
   // In split mode: which side is focused ("old" = before, "new" = after)
   const [activeSide, setActiveSide] = useState<"old" | "new">("new");
   const keybindings = config?.keybindings ?? DEFAULT_ORBIT_CONFIG.keybindings;
+  const incrementalFoldLines =
+    config?.incrementalFoldLines ?? DEFAULT_ORBIT_CONFIG.incrementalFoldLines;
   const fileTreeKeys = keybindings.fileTree;
   const diffViewKeys = keybindings.diffView;
   const commentListKeys = keybindings.commentList;
@@ -576,6 +578,7 @@ export function App({
       }
       if (isBindingPressed(key, diffViewKeys.fold)) {
         if (!visibleDiff) return;
+        const fullFoldRequested = isFoldAllRequested(key, diffViewKeys.fold);
 
         let targetFoldId: number;
         let action: "expand" | "collapse";
@@ -615,9 +618,11 @@ export function App({
         const prevRevealed = oldExpMap.get(targetFoldId) ?? 0;
 
         if (action === "expand") {
-          const chunk = Math.min(
-            FOLD_CHUNK_SIZE,
-            fold.hiddenCount - prevRevealed,
+          const chunk = getExpandChunk(
+            fold.hiddenCount,
+            prevRevealed,
+            incrementalFoldLines,
+            fullFoldRequested,
           );
           newExpMap.set(
             targetFoldId,

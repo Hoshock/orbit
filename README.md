@@ -135,7 +135,8 @@ The following are default keybindings. You can override them in `config.toml`.
 | `f`             | File-level comment                            |
 | `t`             | Toggle split/unified                          |
 | `v`             | Toggle viewed                                 |
-| `z`             | Fold/unfold (incremental, 20 lines at a time) |
+| `z`             | Fold/unfold (incremental, `incremental-fold-lines` at a time) |
+| `Z`             | Fold/unfold all for nearest fold              |
 
 ### Comment input
 
@@ -191,38 +192,39 @@ orbit reads custom settings from `${XDG_CONFIG_HOME:-~/.config}/orbit/config.tom
 If the file (or a specific key) is missing, default values are used.
 
 ```toml
-file_tree_initial_width = 0.2
-initial_view = "unified" # or "split"
+file-tree-initial-width = 0.2
+initial-view = "unified" # or "split"
+incremental-fold-lines = 20
 
 [keybindings.file-tree]
 quit = "q"
-tree_shrink = "["
-tree_grow = "]"
-comment_list = "c"
-prompt_preview = "p"
-toggle_view_mode = "t"
-toggle_viewed = "v"
+tree-shrink = "["
+tree-grow = "]"
+comment-list = "c"
+prompt-preview = "p"
+toggle-view-mode = "t"
+toggle-viewed = "v"
 
 [keybindings.diff-view]
 quit = "q"
 comment = "c"
-delete_comment = "d"
-edit_comment = "e"
-file_comment = "f"
-toggle_view_mode = "t"
-toggle_viewed = "v"
+delete-comment = "d"
+edit-comment = "e"
+file-comment = "f"
+toggle-view-mode = "t"
+toggle-viewed = "v"
 fold = "z"
 
 # comment-input has no configurable keybindings (Esc / Ctrl+Enter fixed)
 
 [keybindings.comment-list]
 quit = "q"
-delete_comment = "d"
-edit_comment = "e"
+delete-comment = "d"
+edit-comment = "e"
 
 [keybindings.prompt-preview]
 quit = "q"
-copy_prompt = "y"
+copy-prompt = "y"
 ```
 
 ## Stack

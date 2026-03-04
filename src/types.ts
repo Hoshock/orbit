@@ -94,5 +94,6 @@ export interface OrbitKeybindings {
 export interface OrbitConfig {
   fileTreeInitialWidth: number;
   initialView: OrbitInitialView;
+  incrementalFoldLines: number;
   keybindings: OrbitKeybindings;
 }
