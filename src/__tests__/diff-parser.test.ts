@@ -1,4 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import { execSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { collapseDiff } from "../data/diff-collapse.ts";
 import {
   buildSplitDisplayLineTypeMap,
@@ -14,6 +18,7 @@ import {
   getLineFromDiff,
   isPureDeletion,
   markerLinesUnifiedToSplit,
+  parseDiffFiles,
   parseNumstat,
   sourceLineToDisplayLineSplit,
 } from "../data/diff-parser.ts";
@@ -141,6 +146,87 @@ describe("parseNumstat", () => {
     expect(map.size).toBe(3);
     expect(map.get("a.ts")).toEqual({ additions: 10, deletions: 5 });
     expect(map.get("c.ts")).toEqual({ additions: 0, deletions: 80 });
+  });
+});
+
+describe("parseDiffFiles", () => {
+  function setupRepo(): string {
+    const repoRoot = mkdtempSync(join(tmpdir(), "orbit-diff-parser-"));
+    execSync("git init -q", { cwd: repoRoot });
+    execSync('git config user.email "orbit-test@example.com"', {
+      cwd: repoRoot,
+    });
+    execSync('git config user.name "orbit-test"', { cwd: repoRoot });
+
+    writeFileSync(join(repoRoot, "tracked.ts"), "const a = 1;\n");
+    execSync("mkdir -p src", { cwd: repoRoot });
+    writeFileSync(join(repoRoot, "src", "nested.ts"), "export const n = 1;\n");
+    execSync("git add tracked.ts", { cwd: repoRoot });
+    execSync("git add src/nested.ts", { cwd: repoRoot });
+    execSync('git commit -q -m "init"', { cwd: repoRoot });
+
+    writeFileSync(join(repoRoot, "tracked.ts"), "const a = 1;\nconst b = 2;\n");
+    writeFileSync(
+      join(repoRoot, "src", "nested.ts"),
+      "export const n = 1;\nexport const m = 2;\n",
+    );
+    writeFileSync(join(repoRoot, "untracked.ts"), "export const x = 1;\n");
+    writeFileSync(join(repoRoot, "src", "new.ts"), "export const y = 1;\n");
+    return repoRoot;
+  }
+
+  it("does not include selected untracked files by default", () => {
+    const repoRoot = setupRepo();
+    try {
+      const files = parseDiffFiles(["diff"], repoRoot, [
+        "tracked.ts",
+        "untracked.ts",
+      ]);
+
+      expect(files.map((f) => f.path)).toEqual(["tracked.ts"]);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("includes selected untracked files when enabled", () => {
+    const repoRoot = setupRepo();
+    try {
+      const files = parseDiffFiles(
+        ["diff"],
+        repoRoot,
+        ["tracked.ts", "src"],
+        true,
+      );
+
+      expect(files.map((f) => f.path).sort()).toEqual([
+        "src/nested.ts",
+        "src/new.ts",
+        "tracked.ts",
+      ]);
+      const untracked = files.find((f) => f.path === "src/new.ts");
+      expect(untracked?.status).toBe("added");
+      expect(untracked?.additions).toBe(1);
+      expect(untracked?.rawDiff).toContain("new file mode 100644");
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("includes all untracked files when enabled without path filter", () => {
+    const repoRoot = setupRepo();
+    try {
+      const files = parseDiffFiles(["diff"], repoRoot, [], true);
+
+      expect(files.map((f) => f.path).sort()).toEqual([
+        "src/nested.ts",
+        "src/new.ts",
+        "tracked.ts",
+        "untracked.ts",
+      ]);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 });
 

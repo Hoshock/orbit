@@ -53,11 +53,19 @@ Usage:
   orbit HEAD              last commit (HEAD~1..HEAD)
   orbit HEAD~3..HEAD      commit range
   orbit feature main      branch comparison
+  orbit -- file.ts        single file diff
+  orbit HEAD -- file.ts   single file from commit range
+  orbit --include-untracked -- file.ts
+                          include selected untracked file(s)
+  orbit --include-untracked .
+                          include all untracked files in working tree
   orbit --root SHA~1..SHA diff against empty tree if base is unresolvable
 
 Options:
   --staged                staged changes
   --root                  diff against empty tree if base ref is unresolvable
+  --include-untracked     include untracked files (all, or limited by -- <path...>)
+  -- <path...>            limit diff to specific file(s)
   -h, --help              show this help
 
 Keybindings:
@@ -111,7 +119,12 @@ async function main() {
 
   let files: ReturnType<typeof parseDiffFiles>;
   try {
-    files = parseDiffFiles(diffArgs, repoRoot);
+    files = parseDiffFiles(
+      diffArgs,
+      repoRoot,
+      options.paths,
+      options.includeUntracked,
+    );
   } catch (err) {
     console.error(`Error running git diff: ${err}`);
     process.exit(1);

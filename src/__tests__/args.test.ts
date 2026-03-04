@@ -10,6 +10,8 @@ describe("parseArgs", () => {
       target: "",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -19,6 +21,19 @@ describe("parseArgs", () => {
       target: "",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
+    });
+  });
+
+  it("empty arg (e.g. lazygit quoted empty SelectedPath) → unstaged changes", () => {
+    expect(parseArgs(argv([""]))).toEqual({
+      base: "",
+      target: "",
+      splitMode: false,
+      root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -28,6 +43,8 @@ describe("parseArgs", () => {
       target: "",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -37,6 +54,8 @@ describe("parseArgs", () => {
       target: "HEAD",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -46,6 +65,8 @@ describe("parseArgs", () => {
       target: "HEAD",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -55,6 +76,8 @@ describe("parseArgs", () => {
       target: "feature",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -64,6 +87,8 @@ describe("parseArgs", () => {
       target: "HEAD",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -73,6 +98,8 @@ describe("parseArgs", () => {
       target: "feature",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -82,6 +109,8 @@ describe("parseArgs", () => {
       target: "HEAD",
       splitMode: false,
       root: true,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -91,6 +120,8 @@ describe("parseArgs", () => {
       target: "",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -100,6 +131,8 @@ describe("parseArgs", () => {
       target: "HEAD",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
     });
   });
 
@@ -109,6 +142,74 @@ describe("parseArgs", () => {
       target: "HEAD",
       splitMode: false,
       root: false,
+      includeUntracked: false,
+      paths: [],
+    });
+  });
+
+  it('"-- file.ts" → unstaged with path filter', () => {
+    expect(parseArgs(argv(["--", "file.ts"]))).toEqual({
+      base: "",
+      target: "",
+      splitMode: false,
+      root: false,
+      includeUntracked: false,
+      paths: ["file.ts"],
+    });
+  });
+
+  it('"HEAD -- file.ts" → commit with path filter', () => {
+    expect(parseArgs(argv(["HEAD", "--", "file.ts"]))).toEqual({
+      base: "HEAD~1",
+      target: "HEAD",
+      splitMode: false,
+      root: false,
+      includeUntracked: false,
+      paths: ["file.ts"],
+    });
+  });
+
+  it('"--staged -- a.ts b.ts" → staged with multiple paths', () => {
+    expect(parseArgs(argv(["--staged", "--", "a.ts", "b.ts"]))).toEqual({
+      base: "--staged",
+      target: "",
+      splitMode: false,
+      root: false,
+      includeUntracked: false,
+      paths: ["a.ts", "b.ts"],
+    });
+  });
+
+  it('"--" alone → unstaged with empty paths', () => {
+    expect(parseArgs(argv(["--"]))).toEqual({
+      base: "",
+      target: "",
+      splitMode: false,
+      root: false,
+      includeUntracked: false,
+      paths: [],
+    });
+  });
+
+  it('"--include-untracked -- file.ts" enables untracked injection', () => {
+    expect(parseArgs(argv(["--include-untracked", "--", "file.ts"]))).toEqual({
+      base: "",
+      target: "",
+      splitMode: false,
+      root: false,
+      includeUntracked: true,
+      paths: ["file.ts"],
+    });
+  });
+
+  it('"--include-untracked" alone keeps normal unstaged diff', () => {
+    expect(parseArgs(argv(["--include-untracked"]))).toEqual({
+      base: "",
+      target: "",
+      splitMode: false,
+      root: false,
+      includeUntracked: true,
+      paths: [],
     });
   });
 });
@@ -121,13 +222,22 @@ describe("buildDiffArgs", () => {
         target: "",
         splitMode: false,
         root: false,
+        includeUntracked: false,
+        paths: [],
       }),
     ).toEqual(["diff", "--staged"]);
   });
 
   it("unstaged", () => {
     expect(
-      buildDiffArgs({ base: "", target: "", splitMode: false, root: false }),
+      buildDiffArgs({
+        base: "",
+        target: "",
+        splitMode: false,
+        root: false,
+        includeUntracked: false,
+        paths: [],
+      }),
     ).toEqual(["diff"]);
   });
 
@@ -138,6 +248,34 @@ describe("buildDiffArgs", () => {
         target: "HEAD",
         splitMode: false,
         root: false,
+        includeUntracked: false,
+        paths: [],
+      }),
+    ).toEqual(["diff", "HEAD~1..HEAD"]);
+  });
+
+  it("with paths", () => {
+    expect(
+      buildDiffArgs({
+        base: "",
+        target: "",
+        splitMode: false,
+        root: false,
+        includeUntracked: false,
+        paths: ["src/app.ts"],
+      }),
+    ).toEqual(["diff"]);
+  });
+
+  it("range with paths", () => {
+    expect(
+      buildDiffArgs({
+        base: "HEAD~1",
+        target: "HEAD",
+        splitMode: false,
+        root: false,
+        includeUntracked: false,
+        paths: ["a.ts", "b.ts"],
       }),
     ).toEqual(["diff", "HEAD~1..HEAD"]);
   });
@@ -151,13 +289,22 @@ describe("formatDiffRange", () => {
         target: "",
         splitMode: false,
         root: false,
+        includeUntracked: false,
+        paths: [],
       }),
     ).toBe("staged changes");
   });
 
   it("unstaged", () => {
     expect(
-      formatDiffRange({ base: "", target: "", splitMode: false, root: false }),
+      formatDiffRange({
+        base: "",
+        target: "",
+        splitMode: false,
+        root: false,
+        includeUntracked: false,
+        paths: [],
+      }),
     ).toBe("unstaged changes");
   });
 
@@ -168,6 +315,8 @@ describe("formatDiffRange", () => {
         target: "HEAD",
         splitMode: false,
         root: false,
+        includeUntracked: false,
+        paths: [],
       }),
     ).toBe("HEAD~1..HEAD");
   });

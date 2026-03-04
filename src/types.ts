@@ -42,6 +42,8 @@ export interface CliOptions {
   target: string;
   splitMode: boolean;
   root: boolean;
+  includeUntracked: boolean;
+  paths: string[];
   /** Short hash for old (base) side, resolved at startup */
   oldHash?: string;
   /** Short hash for new (target) side, resolved at startup */

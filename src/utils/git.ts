@@ -35,6 +35,23 @@ export function refExists(ref: string, cwd?: string): boolean {
   return result.exitCode === 0;
 }
 
+/** List untracked files under the given pathspec. */
+export function listUntrackedFiles(path: string, cwd?: string): string[] {
+  const result = Bun.spawnSync(
+    ["git", "ls-files", "--others", "--exclude-standard", "--", path],
+    {
+      cwd: cwd ?? process.cwd(),
+    },
+  );
+  if (result.exitCode !== 0) return [];
+
+  return result.stdout
+    .toString()
+    .split("\n")
+    .map((line) => line.trim().replace(/\\/g, "/").replace(/^\.\//, ""))
+    .filter(Boolean);
+}
+
 /** Get the hash of an empty tree object (for diffing root commits). */
 export function getEmptyTreeHash(cwd?: string): string {
   const result = Bun.spawnSync(

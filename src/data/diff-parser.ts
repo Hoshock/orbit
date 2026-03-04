@@ -1,21 +1,102 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { GENERATED_PATTERNS } from "../constants.ts";
 import type { DiffFile } from "../types.ts";
-import { runGit } from "../utils/git.ts";
+import { listUntrackedFiles, runGit } from "../utils/git.ts";
 
 export function parseDiffFiles(
   diffArgs: string[],
   repoRoot: string,
+  paths: string[] = [],
+  includeUntracked = false,
 ): DiffFile[] {
   // Generate full-context diff for fold/unfold support
   const fullArgs = injectFullContext(diffArgs);
   const raw = runGit([...fullArgs, "--no-color"], repoRoot);
-  if (!raw.trim()) return [];
 
-  // Get --numstat for accurate +/- counts
-  const numstat = runGit([...diffArgs, "--numstat"], repoRoot);
-  const statMap = parseNumstat(numstat);
+  let files: DiffFile[] = [];
+  if (raw.trim()) {
+    // Get --numstat for accurate +/- counts
+    const numstat = runGit([...diffArgs, "--numstat"], repoRoot);
+    const statMap = parseNumstat(numstat);
+    files = splitDiffIntoFiles(raw, statMap);
+  }
 
-  return splitDiffIntoFiles(raw, statMap);
+  const filtered = filterFilesByPaths(files, paths);
+  if (!includeUntracked) return filtered;
+
+  // Append untracked files only when explicitly requested via CLI flag.
+  const alreadyIncluded = new Set(filtered.map((f) => normalizePath(f.path)));
+  const selectors = paths.length > 0 ? paths : ["."];
+  for (const selector of selectors) {
+    const untracked = listUntrackedFiles(selector, repoRoot);
+    for (const p of untracked) {
+      const normalized = normalizePath(p);
+      if (alreadyIncluded.has(normalized)) continue;
+      const diff = generateUntrackedDiff(p, repoRoot);
+      if (!diff) continue;
+      filtered.push(diff);
+      alreadyIncluded.add(normalized);
+    }
+  }
+
+  return filtered;
+}
+
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
+function matchesSelectedPath(filePath: string, selector: string): boolean {
+  const file = normalizePath(filePath);
+  const selected = normalizePath(selector);
+  if (!selected) return false;
+  return file === selected || file.startsWith(`${selected}/`);
+}
+
+function filterFilesByPaths(files: DiffFile[], paths: string[]): DiffFile[] {
+  if (paths.length === 0) return files;
+  return files.filter((f) => paths.some((p) => matchesSelectedPath(f.path, p)));
+}
+
+function generateUntrackedDiff(
+  filePath: string,
+  repoRoot: string,
+): DiffFile | null {
+  const absPath = resolve(repoRoot, filePath);
+  if (!existsSync(absPath)) return null;
+
+  const content = readFileSync(absPath, "utf8");
+  const lines = content.split("\n");
+  // Remove trailing empty line from final newline
+  if (lines.length > 0 && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+  const lineCount = lines.length;
+
+  const header = [
+    `diff --git a/${filePath} b/${filePath}`,
+    "new file mode 100644",
+    "--- /dev/null",
+    `+++ b/${filePath}`,
+  ].join("\n");
+
+  let rawDiff = `${header}\n`;
+  if (lineCount > 0) {
+    const body = lines.map((l) => `+${l}`).join("\n");
+    rawDiff += `@@ -0,0 +1,${lineCount} @@\n${body}\n`;
+  }
+
+  const isGenerated = GENERATED_PATTERNS.some((p) => p.test(filePath));
+
+  return {
+    path: filePath,
+    status: "added",
+    additions: lineCount,
+    deletions: 0,
+    rawDiff,
+    isGenerated,
+  };
 }
 
 function injectFullContext(args: string[]): string[] {

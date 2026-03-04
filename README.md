@@ -58,6 +58,10 @@ orbit --staged            # staged changes (git diff --staged)
 orbit HEAD                # last commit (HEAD~1..HEAD)
 orbit HEAD~3..HEAD        # commit range
 orbit feature main        # branch comparison
+orbit -- file.ts          # single file diff
+orbit HEAD -- file.ts     # single file from commit range
+orbit --include-untracked -- file.ts # include selected untracked file(s)
+orbit --include-untracked . # include all untracked files
 orbit --root SHA~1..SHA   # diff against empty tree if base is unresolvable
 ```
 
@@ -68,8 +72,13 @@ Add the following to your lazygit config (`~/.config/lazygit/config.yml`) to lau
 ```yaml
 customCommands:
   - key: "o"
-    description: "Review uncommitted changes"
+    description: "Review working tree diff"
     command: "orbit ."
+    context: "files"
+    output: terminal
+  - key: "O"
+    description: "Review working tree diff (include untracked)"
+    command: "orbit --include-untracked ."
     context: "files"
     output: terminal
   - key: "o"
@@ -84,15 +93,15 @@ customCommands:
     output: terminal
 ```
 
-Press `o` in any of these panels to open orbit:
+Press `o` / `O` in these panels to open orbit:
 
 | Panel    | What it reviews                                    |
 | -------- | -------------------------------------------------- |
-| Files    | Unstaged changes                                   |
+| Files    | `o`: current diff, `O`: current diff + untracked |
 | Branches | Diff between selected branch and current branch    |
 | Commits  | Selected commit, or range if multiple are selected |
 
-For commit ranges, select multiple commits with `v` (visual mode) or `shift+up/down` in lazygit, then press `o`. The `~1` ensures the first selected commit is included in the diff. The `--root` flag handles the case where the selection includes the initial commit by diffing against an empty tree.
+In files context, orbit is launched without file selection templating, so nil pointer issues from missing `SelectedFile`/`SelectedPath` do not occur. For commit ranges, select multiple commits with `v` (visual mode) or `shift+up/down` in lazygit, then press `o`. The `~1` ensures the first selected commit is included in the diff. The `--root` flag handles the case where the selection includes the initial commit by diffing against an empty tree.
 
 ## Keybindings
 
