@@ -24,13 +24,6 @@ export const COLORS = {
   foldMarker: "#2d2d2d",
 } as const;
 
-export const STATUS_ICONS: Record<string, string> = {
-  modified: "M",
-  added: "A",
-  deleted: "D",
-  renamed: "R",
-};
-
 export const GENERATED_PATTERNS = [
   /^bun\.lockb$/,
   /^package-lock\.json$/,

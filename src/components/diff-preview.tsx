@@ -1,8 +1,4 @@
-import {
-  type CodeRenderable,
-  type DiffRenderable,
-  getTreeSitterClient,
-} from "@opentui/core";
+import { getTreeSitterClient } from "@opentui/core";
 import { useEffect, useMemo, useRef } from "react";
 import { COLORS } from "../constants.ts";
 import { collapseDiff } from "../data/diff-collapse.ts";
@@ -12,11 +8,11 @@ import {
 } from "../data/diff-parser.ts";
 import { syntaxStyle } from "../theme.ts";
 import type { DiffFile, ReviewComment } from "../types.ts";
-import {
-  buildSplitProjectedHighlights,
-  buildUnifiedProjectedHighlights,
-} from "../utils/diff-syntax.ts";
 import { getFiletype } from "../utils/filetype.ts";
+import {
+  type DiffSyntaxRuntime,
+  installProjectedDiffSyntaxHighlighting,
+} from "./diff-syntax-highlighting.ts";
 
 interface DiffPreviewProps {
   file: DiffFile | null;
@@ -31,23 +27,9 @@ type LineColorTarget = {
   setLineColor: (line: number, color: string) => void;
 };
 
-type DiffRuntime = DiffRenderable & {
-  buildView?: () => void;
-  pendingRebuild?: boolean;
+type DiffRuntime = DiffSyntaxRuntime & {
   leftSide?: LineColorTarget;
   rightSide?: LineColorTarget;
-  leftCodeRenderable?: CodeRenderable & {
-    onHighlight?: (
-      highlights: unknown[],
-      context: { content: string; filetype: string },
-    ) => Promise<unknown[]> | unknown[];
-  };
-  rightCodeRenderable?: CodeRenderable & {
-    onHighlight?: (
-      highlights: unknown[],
-      context: { content: string; filetype: string },
-    ) => Promise<unknown[]> | unknown[];
-  };
 };
 
 export function DiffPreview({
@@ -93,53 +75,14 @@ export function DiffPreview({
   );
 
   useEffect(() => {
-    const diff = diffRef.current;
-    if (!diff?.leftCodeRenderable || !file || !rawFiletype || !treeSitterClient)
-      return;
-
-    if (splitMode) {
-      diff.leftCodeRenderable.onHighlight = async (_highlights, context) =>
-        buildSplitProjectedHighlights(
-          highlightDiffsRef.current.fullDiff,
-          highlightDiffsRef.current.visibleDiff,
-          context.filetype,
-          "left",
-          treeSitterClient,
-        );
-      if (diff.rightCodeRenderable) {
-        diff.rightCodeRenderable.onHighlight = async (_highlights, context) =>
-          buildSplitProjectedHighlights(
-            highlightDiffsRef.current.fullDiff,
-            highlightDiffsRef.current.visibleDiff,
-            context.filetype,
-            "right",
-            treeSitterClient,
-          );
-      }
-    } else {
-      diff.leftCodeRenderable.onHighlight = async (_highlights, context) =>
-        buildUnifiedProjectedHighlights(
-          highlightDiffsRef.current.fullDiff,
-          highlightDiffsRef.current.visibleDiff,
-          context.filetype,
-          treeSitterClient,
-        );
-    }
-
-    if (typeof diff.buildView === "function") {
-      diff.buildView();
-      if ("pendingRebuild" in diff) diff.pendingRebuild = false;
-    }
-
-    return () => {
-      if (diff.leftCodeRenderable) {
-        diff.leftCodeRenderable.onHighlight = undefined;
-      }
-      if (diff.rightCodeRenderable) {
-        diff.rightCodeRenderable.onHighlight = undefined;
-      }
-    };
-  }, [file, splitMode, rawFiletype, treeSitterClient]);
+    return installProjectedDiffSyntaxHighlighting({
+      diff: diffRef.current,
+      splitMode,
+      rawFiletype,
+      treeSitterClient,
+      highlightDiffsRef,
+    });
+  }, [splitMode, rawFiletype, treeSitterClient]);
 
   useEffect(() => {
     if (!file) return;

@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented here.
 
+## v0.2.7 - 2026-03-23
+
+### Added
+
+- JSON, TOML, and YAML syntax highlighting are now bundled with local tree-sitter grammars.
+
+### Updated
+
+- `Z` now folds or unfolds every fold in the current file instead of only toggling the nearest fold.
+- Unified diff syntax highlighting now derives highlights from side-aware buffers to avoid malformed mixed-language parsing in structured config diffs.
+- Fold-state handling and projected syntax-highlighting setup are now shared across the main diff and preview panes to keep behavior aligned.
+
+### Fixed
+
+- Bundled tree-sitter grammar assets now resolve correctly when orbit runs from paths containing spaces or non-ASCII characters.
+- No-op comment deletions no longer trigger redundant cache writes or subscriber notifications.
+
 ## v0.2.6 - 2026-03-05
 
 ### Added

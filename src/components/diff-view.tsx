@@ -1,6 +1,4 @@
 import {
-  type CodeRenderable,
-  type DiffRenderable,
   getTreeSitterClient,
   type MouseEvent,
   type RGBA,
@@ -20,11 +18,11 @@ import {
 } from "../data/diff-parser.ts";
 import { syntaxStyle } from "../theme.ts";
 import type { DiffFile, ReviewComment } from "../types.ts";
-import {
-  buildSplitProjectedHighlights,
-  buildUnifiedProjectedHighlights,
-} from "../utils/diff-syntax.ts";
 import { getFiletype } from "../utils/filetype.ts";
+import {
+  type DiffSyntaxRuntime,
+  installProjectedDiffSyntaxHighlighting,
+} from "./diff-syntax-highlighting.ts";
 
 interface DiffViewProps {
   file: DiffFile;
@@ -49,23 +47,9 @@ type LineColor =
   | RGBA
   | { gutter?: string | RGBA; content?: string | RGBA };
 
-type DiffRuntime = DiffRenderable & {
-  buildView?: () => void;
-  pendingRebuild?: boolean;
+type DiffRuntime = DiffSyntaxRuntime & {
   leftSide?: LineColorTarget;
   rightSide?: LineColorTarget;
-  leftCodeRenderable?: CodeRenderable & {
-    onHighlight?: (
-      highlights: unknown[],
-      context: { content: string; filetype: string },
-    ) => Promise<unknown[]> | unknown[];
-  };
-  rightCodeRenderable?: CodeRenderable & {
-    onHighlight?: (
-      highlights: unknown[],
-      context: { content: string; filetype: string },
-    ) => Promise<unknown[]> | unknown[];
-  };
 };
 
 export function DiffView({
@@ -139,51 +123,13 @@ export function DiffView({
   );
 
   useEffect(() => {
-    const diff = diffRef.current;
-    if (!diff?.leftCodeRenderable || !rawFiletype || !treeSitterClient) return;
-
-    if (splitMode) {
-      diff.leftCodeRenderable.onHighlight = async (_highlights, context) =>
-        buildSplitProjectedHighlights(
-          highlightDiffsRef.current.fullDiff,
-          highlightDiffsRef.current.visibleDiff,
-          context.filetype,
-          "left",
-          treeSitterClient,
-        );
-      if (diff.rightCodeRenderable) {
-        diff.rightCodeRenderable.onHighlight = async (_highlights, context) =>
-          buildSplitProjectedHighlights(
-            highlightDiffsRef.current.fullDiff,
-            highlightDiffsRef.current.visibleDiff,
-            context.filetype,
-            "right",
-            treeSitterClient,
-          );
-      }
-    } else {
-      diff.leftCodeRenderable.onHighlight = async (_highlights, context) =>
-        buildUnifiedProjectedHighlights(
-          highlightDiffsRef.current.fullDiff,
-          highlightDiffsRef.current.visibleDiff,
-          context.filetype,
-          treeSitterClient,
-        );
-    }
-
-    if (typeof diff.buildView === "function") {
-      diff.buildView();
-      if ("pendingRebuild" in diff) diff.pendingRebuild = false;
-    }
-
-    return () => {
-      if (diff.leftCodeRenderable) {
-        diff.leftCodeRenderable.onHighlight = undefined;
-      }
-      if (diff.rightCodeRenderable) {
-        diff.rightCodeRenderable.onHighlight = undefined;
-      }
-    };
+    return installProjectedDiffSyntaxHighlighting({
+      diff: diffRef.current,
+      splitMode,
+      rawFiletype,
+      treeSitterClient,
+      highlightDiffsRef,
+    });
   }, [splitMode, rawFiletype, treeSitterClient]);
 
   // Side-aware comment matching: check comment's side against cursor's source line for that side

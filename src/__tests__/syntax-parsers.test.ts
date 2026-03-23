@@ -20,17 +20,20 @@ describe("registerSyntaxParsers", () => {
     expect(() => registerSyntaxParsers()).not.toThrow();
   });
 
-  it("loads the yaml parser through the standard tree-sitter client", async () => {
+  async function expectParsersHighlight(
+    filetype: "json" | "toml" | "yaml",
+    text: string,
+  ) {
     const client = new TreeSitterClient({
       dataPath: join(tmpdir(), "orbit-tree-sitter-test"),
     });
 
     try {
       const result = await Promise.race([
-        client.highlightOnce("foo:\n  bar: baz\n", "yaml"),
+        client.highlightOnce(text, filetype),
         new Promise<never>((_, reject) =>
           setTimeout(
-            () => reject(new Error("yaml highlight timed out")),
+            () => reject(new Error(`${filetype} highlight timed out`)),
             3_000,
           ),
         ),
@@ -42,6 +45,21 @@ describe("registerSyntaxParsers", () => {
     } finally {
       await client.destroy();
     }
+  }
+
+  it("loads the yaml parser through the standard tree-sitter client", async () => {
+    await expectParsersHighlight("yaml", "foo:\n  bar: baz\n");
+  });
+
+  it("loads the json parser through the standard tree-sitter client", async () => {
+    await expectParsersHighlight("json", '{\n  "foo": "bar"\n}\n');
+  });
+
+  it("loads the toml parser through the standard tree-sitter client", async () => {
+    await expectParsersHighlight(
+      "toml",
+      'title = "orbit"\n[review]\nenabled = true\n',
+    );
   });
 
   it("does not highlight plain yaml scalar values as strings", async () => {

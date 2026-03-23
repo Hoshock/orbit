@@ -153,8 +153,14 @@ describe("CommentStore", () => {
     });
 
     it("no-ops for non-existent id", () => {
+      const listener = mock(() => {});
       commentStore.add(makeComment());
+      commentStore.subscribe(listener);
+      listener.mockClear();
+
       commentStore.remove("nonexistent");
+
+      expect(listener).not.toHaveBeenCalled();
       expect(commentStore.getSnapshot()).toHaveLength(1);
     });
   });

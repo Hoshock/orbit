@@ -10,7 +10,6 @@ const MIN_TREE_PCT = 0.1;
 const MAX_TREE_PCT = 0.5;
 
 interface HomeScreenProps {
-  files: DiffFile[];
   rows: FlatTreeRow[];
   selectedIndex: number;
   comments: ReviewComment[];

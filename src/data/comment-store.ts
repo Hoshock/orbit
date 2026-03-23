@@ -61,7 +61,9 @@ class CommentStore {
   }
 
   remove(id: string) {
-    this.comments = this.comments.filter((c) => c.id !== id);
+    const nextComments = this.comments.filter((c) => c.id !== id);
+    if (nextComments.length === this.comments.length) return;
+    this.comments = nextComments;
     this.flush();
     this.notify();
   }

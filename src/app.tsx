@@ -29,7 +29,6 @@ import {
   displayRangeToSourceRange,
   displayRangeToSourceRangeSplit,
   findNearestDisplayLineForSideSplit,
-  findNearestFoldIdByDisplayLine,
   findNextDisplayLineForSideSplit,
   getDisplayLineCount,
   getLineFromDiff,
@@ -38,10 +37,10 @@ import {
   sourceLineToDisplayLineSplit,
 } from "./data/diff-parser.ts";
 import {
-  getExpandChunk,
   isFoldAllRequested,
   isKeybindingPressed,
 } from "./data/fold-controls.ts";
+import { getFoldTransition } from "./data/fold-state.ts";
 import {
   DEFAULT_ORBIT_CONFIG,
   saveSessionPrefs,
@@ -58,6 +57,7 @@ import type {
 import { copyToClipboard } from "./utils/clipboard.ts";
 import {
   buildFileTree,
+  type FlatTreeRow,
   flattenTree,
   getNodeFilePaths,
 } from "./utils/file-tree.ts";
@@ -209,6 +209,34 @@ export function App({
     setFlash(msg);
     flashTimer.current = setTimeout(() => setFlash(""), 2000);
   }, []);
+
+  const toggleCollapsedDir = useCallback((path: string) => {
+    setCollapsedDirs((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
+  const activateTreeRow = useCallback(
+    (row: FlatTreeRow | undefined) => {
+      if (!row) return;
+      if (row.node.isDir) {
+        toggleCollapsedDir(row.node.path);
+        return;
+      }
+      if (row.fileIndex !== null) {
+        setFileIndex(row.fileIndex);
+        setCursorLine(1);
+        setMode("diff-view");
+      }
+    },
+    [toggleCollapsedDir],
+  );
 
   const currentFile = files[fileIndex];
   const diffRange = formatDiffRange(options);
@@ -370,23 +398,7 @@ export function App({
           return;
         }
         case "return": {
-          const row = flatRows[treeIndex];
-          if (!row) return;
-          if (row.node.isDir) {
-            setCollapsedDirs((prev) => {
-              const next = new Set(prev);
-              if (next.has(row.node.path)) {
-                next.delete(row.node.path);
-              } else {
-                next.add(row.node.path);
-              }
-              return next;
-            });
-          } else if (row.fileIndex !== null) {
-            setFileIndex(row.fileIndex);
-            setCursorLine(1);
-            setMode("diff-view");
-          }
+          activateTreeRow(flatRows[treeIndex]);
           return;
         }
       }
@@ -598,209 +610,30 @@ export function App({
       }
       if (isBindingPressed(key, diffViewKeys.fold)) {
         if (!visibleDiff) return;
-        const fullFoldRequested = isFoldAllRequested(key, diffViewKeys.fold);
-        const oldExpMap =
-          expandedFolds.get(currentFile.path) ?? new Map<number, number>();
-
-        if (fullFoldRequested) {
-          if (visibleDiff.folds.length === 0) {
-            showFlash("No folds in file");
-            return;
-          }
-
-          const allExpanded = visibleDiff.folds.every(
-            (fold) => (oldExpMap.get(fold.id) ?? 0) >= fold.hiddenCount,
-          );
-          const newExpMap = new Map(oldExpMap);
-          let newCursor = 1;
-
-          if (allExpanded) {
-            for (const fold of visibleDiff.folds) {
-              newExpMap.delete(fold.id);
-            }
-          } else {
-            let expandedFoldCount = 0;
-            let revealedLineCount = 0;
-
-            for (const fold of visibleDiff.folds) {
-              const revealed = oldExpMap.get(fold.id) ?? 0;
-              if (revealed >= fold.hiddenCount) continue;
-              newExpMap.set(fold.id, fold.hiddenCount);
-              expandedFoldCount++;
-              revealedLineCount += fold.hiddenCount - revealed;
-            }
-
-            const newResult = collapseDiff(
-              currentFile.rawDiff,
-              newExpMap,
-              markerWidth,
-            );
-            const anchorInfo = resolveLineAndSide(activeDiff, cursorLine);
-            newCursor = anchorInfo
-              ? ((splitMode
-                  ? sourceLineToDisplayLineSplit(
-                      newResult.diff,
-                      anchorInfo.line,
-                      anchorInfo.side,
-                    )
-                  : sourceLineToDisplayLine(
-                      newResult.diff,
-                      anchorInfo.line,
-                      anchorInfo.side,
-                    )) ?? 1)
-              : 1;
-
-            setExpandedFolds((prev) => {
-              const next = new Map(prev);
-              next.set(currentFile.path, newExpMap);
-              return next;
-            });
-            setCursorLine(newCursor);
-            showFlash(
-              `Expanded all folds (${expandedFoldCount} regions, +${revealedLineCount} lines)`,
-            );
-            return;
-          }
-
-          const newResult = collapseDiff(
-            currentFile.rawDiff,
-            newExpMap,
-            markerWidth,
-          );
-          const nearestFoldId = findNearestFoldIdByDisplayLine(
-            activeDiff,
-            visibleDiff.folds,
-            cursorLine,
-            splitMode,
-          );
-          const nextMarkerLines = splitMode
-            ? markerLinesUnifiedToSplit(newResult.diff, newResult.markerLines)
-            : newResult.markerLines;
-          if (nearestFoldId !== null) {
-            for (const [dispLine, foldId] of nextMarkerLines) {
-              if (foldId === nearestFoldId) {
-                newCursor = dispLine;
-                break;
-              }
-            }
-          }
-
+        const transition = getFoldTransition({
+          fullDiff: currentFile.rawDiff,
+          activeDiff,
+          visibleDiff,
+          cursorLine,
+          splitMode,
+          activeSide,
+          markerLinesForView,
+          expandedFolds:
+            expandedFolds.get(currentFile.path) ?? new Map<number, number>(),
+          markerWidth,
+          incrementalFoldLines,
+          fullFoldRequested: isFoldAllRequested(key, diffViewKeys.fold),
+        });
+        if (!transition) return;
+        if (transition.changed) {
           setExpandedFolds((prev) => {
             const next = new Map(prev);
-            next.set(currentFile.path, newExpMap);
+            next.set(currentFile.path, transition.expandedFolds);
             return next;
           });
-          setCursorLine(newCursor);
-          showFlash(
-            `Collapsed all folds (${visibleDiff.folds.length} regions)`,
-          );
-          return;
+          setCursorLine(transition.cursorLine);
         }
-
-        let targetFoldId: number;
-        let action: "expand" | "collapse";
-
-        const markerFoldId = markerLinesForView?.get(cursorLine);
-        if (markerFoldId !== undefined) {
-          targetFoldId = markerFoldId;
-          action = "expand";
-        } else {
-          const nearestFoldId = findNearestFoldIdByDisplayLine(
-            activeDiff,
-            visibleDiff.folds,
-            cursorLine,
-            splitMode,
-          );
-          if (nearestFoldId === null) {
-            showFlash("No fold nearby");
-            return;
-          }
-          targetFoldId = nearestFoldId;
-          const expMap =
-            expandedFolds.get(currentFile.path) ?? new Map<number, number>();
-          const nearestFold = visibleDiff.folds.find(
-            (f) => f.id === nearestFoldId,
-          );
-          if (!nearestFold) return;
-          const revealed = expMap.get(nearestFold.id) ?? 0;
-          action = revealed >= nearestFold.hiddenCount ? "collapse" : "expand";
-        }
-
-        const fold = visibleDiff.folds.find((f) => f.id === targetFoldId);
-        if (!fold) return;
-
-        const newExpMap = new Map(oldExpMap);
-        const prevRevealed = oldExpMap.get(targetFoldId) ?? 0;
-
-        if (action === "expand") {
-          const chunk = getExpandChunk(
-            fold.hiddenCount,
-            prevRevealed,
-            incrementalFoldLines,
-            fullFoldRequested,
-          );
-          newExpMap.set(
-            targetFoldId,
-            Math.min(prevRevealed + chunk, fold.hiddenCount),
-          );
-        } else {
-          newExpMap.delete(targetFoldId);
-        }
-
-        const newResult = collapseDiff(
-          currentFile.rawDiff,
-          newExpMap,
-          markerWidth,
-        );
-        const anchorInfo = resolveLineAndSide(activeDiff, cursorLine);
-
-        let newCursor = 1;
-        if (action === "collapse") {
-          const nextMarkerLines = splitMode
-            ? markerLinesUnifiedToSplit(newResult.diff, newResult.markerLines)
-            : newResult.markerLines;
-          for (const [dispLine, fId] of nextMarkerLines) {
-            if (fId === targetFoldId) {
-              newCursor = dispLine;
-              break;
-            }
-          }
-        } else if (anchorInfo) {
-          const dispLine = splitMode
-            ? sourceLineToDisplayLineSplit(
-                newResult.diff,
-                anchorInfo.line,
-                anchorInfo.side,
-              )
-            : sourceLineToDisplayLine(
-                newResult.diff,
-                anchorInfo.line,
-                anchorInfo.side,
-              );
-          newCursor = dispLine ?? 1;
-        }
-
-        setExpandedFolds((prev) => {
-          const next = new Map(prev);
-          next.set(currentFile.path, newExpMap);
-          return next;
-        });
-        setCursorLine(newCursor);
-
-        if (action === "collapse") {
-          showFlash(
-            `Collapsed L${fold.newLineStart}-${fold.newLineEnd} (${fold.hiddenCount} lines)`,
-          );
-        } else {
-          const remaining =
-            fold.hiddenCount - (newExpMap.get(targetFoldId) ?? 0);
-          const chunk = (newExpMap.get(targetFoldId) ?? 0) - prevRevealed;
-          if (remaining > 0) {
-            showFlash(`+${chunk} lines (${remaining} still hidden)`);
-          } else {
-            showFlash(`Fully expanded (${fold.hiddenCount} lines)`);
-          }
-        }
+        showFlash(transition.flash);
         return;
       }
       if (isBindingPressed(key, diffViewKeys.editComment)) {
@@ -1076,7 +909,6 @@ export function App({
 
       {mode === "file-list" ? (
         <HomeScreen
-          files={files}
           rows={flatRows}
           selectedIndex={treeIndex}
           comments={comments}
@@ -1087,25 +919,7 @@ export function App({
           expandedFolds={expandedFolds}
           onTreeResize={setTreePercent}
           onSelectRow={(i) => setTreeIndex(i)}
-          onOpenFile={(rowIdx) => {
-            const row = flatRows[rowIdx];
-            if (!row) return;
-            if (row.node.isDir) {
-              setCollapsedDirs((prev) => {
-                const next = new Set(prev);
-                if (next.has(row.node.path)) {
-                  next.delete(row.node.path);
-                } else {
-                  next.add(row.node.path);
-                }
-                return next;
-              });
-            } else if (row.fileIndex !== null) {
-              setFileIndex(row.fileIndex);
-              setCursorLine(1);
-              setMode("diff-view");
-            }
-          }}
+          onOpenFile={(rowIdx) => activateTreeRow(flatRows[rowIdx])}
         />
       ) : null}
 
