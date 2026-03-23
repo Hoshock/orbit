@@ -136,7 +136,7 @@ The following are default keybindings. You can override them in `config.toml`.
 | `t`             | Toggle split/unified                          |
 | `v`             | Toggle viewed                                 |
 | `z`             | Fold/unfold (incremental, `incremental-fold-lines` at a time) |
-| `Z`             | Fold/unfold all for nearest fold              |
+| `Z`             | Fold/unfold all in the current file           |
 
 ### Comment input
 
@@ -254,6 +254,9 @@ orbit uses [tree-sitter](https://github.com/tree-sitter/tree-sitter) for syntax 
 | Markdown   | OpenTUI built-in                               |
 | Zig        | OpenTUI built-in                               |
 | Python     | Bundled grammar (`assets/tree-sitter/python/`) |
+| JSON       | Bundled grammar (`assets/tree-sitter/json/`)   |
+| TOML       | Bundled grammar (`assets/tree-sitter/toml/`)   |
+| YAML       | Bundled grammar (`assets/tree-sitter/yaml/`)   |
 
 ### Adding a new language
 

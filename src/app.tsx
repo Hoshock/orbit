@@ -599,6 +599,103 @@ export function App({
       if (isBindingPressed(key, diffViewKeys.fold)) {
         if (!visibleDiff) return;
         const fullFoldRequested = isFoldAllRequested(key, diffViewKeys.fold);
+        const oldExpMap =
+          expandedFolds.get(currentFile.path) ?? new Map<number, number>();
+
+        if (fullFoldRequested) {
+          if (visibleDiff.folds.length === 0) {
+            showFlash("No folds in file");
+            return;
+          }
+
+          const allExpanded = visibleDiff.folds.every(
+            (fold) => (oldExpMap.get(fold.id) ?? 0) >= fold.hiddenCount,
+          );
+          const newExpMap = new Map(oldExpMap);
+          let newCursor = 1;
+
+          if (allExpanded) {
+            for (const fold of visibleDiff.folds) {
+              newExpMap.delete(fold.id);
+            }
+          } else {
+            let expandedFoldCount = 0;
+            let revealedLineCount = 0;
+
+            for (const fold of visibleDiff.folds) {
+              const revealed = oldExpMap.get(fold.id) ?? 0;
+              if (revealed >= fold.hiddenCount) continue;
+              newExpMap.set(fold.id, fold.hiddenCount);
+              expandedFoldCount++;
+              revealedLineCount += fold.hiddenCount - revealed;
+            }
+
+            const newResult = collapseDiff(
+              currentFile.rawDiff,
+              newExpMap,
+              markerWidth,
+            );
+            const anchorInfo = resolveLineAndSide(activeDiff, cursorLine);
+            newCursor = anchorInfo
+              ? ((splitMode
+                  ? sourceLineToDisplayLineSplit(
+                      newResult.diff,
+                      anchorInfo.line,
+                      anchorInfo.side,
+                    )
+                  : sourceLineToDisplayLine(
+                      newResult.diff,
+                      anchorInfo.line,
+                      anchorInfo.side,
+                    )) ?? 1)
+              : 1;
+
+            setExpandedFolds((prev) => {
+              const next = new Map(prev);
+              next.set(currentFile.path, newExpMap);
+              return next;
+            });
+            setCursorLine(newCursor);
+            showFlash(
+              `Expanded all folds (${expandedFoldCount} regions, +${revealedLineCount} lines)`,
+            );
+            return;
+          }
+
+          const newResult = collapseDiff(
+            currentFile.rawDiff,
+            newExpMap,
+            markerWidth,
+          );
+          const nearestFoldId = findNearestFoldIdByDisplayLine(
+            activeDiff,
+            visibleDiff.folds,
+            cursorLine,
+            splitMode,
+          );
+          const nextMarkerLines = splitMode
+            ? markerLinesUnifiedToSplit(newResult.diff, newResult.markerLines)
+            : newResult.markerLines;
+          if (nearestFoldId !== null) {
+            for (const [dispLine, foldId] of nextMarkerLines) {
+              if (foldId === nearestFoldId) {
+                newCursor = dispLine;
+                break;
+              }
+            }
+          }
+
+          setExpandedFolds((prev) => {
+            const next = new Map(prev);
+            next.set(currentFile.path, newExpMap);
+            return next;
+          });
+          setCursorLine(newCursor);
+          showFlash(
+            `Collapsed all folds (${visibleDiff.folds.length} regions)`,
+          );
+          return;
+        }
 
         let targetFoldId: number;
         let action: "expand" | "collapse";
@@ -632,8 +729,6 @@ export function App({
         const fold = visibleDiff.folds.find((f) => f.id === targetFoldId);
         if (!fold) return;
 
-        const oldExpMap =
-          expandedFolds.get(currentFile.path) ?? new Map<number, number>();
         const newExpMap = new Map(oldExpMap);
         const prevRevealed = oldExpMap.get(targetFoldId) ?? 0;
 
@@ -1017,6 +1112,7 @@ export function App({
       {showDiff ? (
         <DiffView
           file={{ ...currentFile, rawDiff: activeDiff }}
+          fullDiff={currentFile.rawDiff}
           cursorLine={cursorLine}
           comments={comments}
           splitMode={splitMode}

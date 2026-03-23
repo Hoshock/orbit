@@ -1,4 +1,5 @@
 import {
+  type CodeRenderable,
   type DiffRenderable,
   getTreeSitterClient,
   type MouseEvent,
@@ -19,10 +20,15 @@ import {
 } from "../data/diff-parser.ts";
 import { syntaxStyle } from "../theme.ts";
 import type { DiffFile, ReviewComment } from "../types.ts";
+import {
+  buildSplitProjectedHighlights,
+  buildUnifiedProjectedHighlights,
+} from "../utils/diff-syntax.ts";
 import { getFiletype } from "../utils/filetype.ts";
 
 interface DiffViewProps {
   file: DiffFile;
+  fullDiff?: string;
   cursorLine: number;
   comments: ReviewComment[];
   splitMode: boolean;
@@ -48,10 +54,23 @@ type DiffRuntime = DiffRenderable & {
   pendingRebuild?: boolean;
   leftSide?: LineColorTarget;
   rightSide?: LineColorTarget;
+  leftCodeRenderable?: CodeRenderable & {
+    onHighlight?: (
+      highlights: unknown[],
+      context: { content: string; filetype: string },
+    ) => Promise<unknown[]> | unknown[];
+  };
+  rightCodeRenderable?: CodeRenderable & {
+    onHighlight?: (
+      highlights: unknown[],
+      context: { content: string; filetype: string },
+    ) => Promise<unknown[]> | unknown[];
+  };
 };
 
 export function DiffView({
   file,
+  fullDiff,
   cursorLine,
   comments,
   splitMode,
@@ -64,6 +83,10 @@ export function DiffView({
   const { width, height } = useTerminalDimensions();
   const diffRef = useRef<DiffRuntime | null>(null);
   const scrollRef = useRef<ScrollBoxRenderable | null>(null);
+  const highlightDiffsRef = useRef({
+    fullDiff: "",
+    visibleDiff: "",
+  });
   const treeSitterClient = useMemo(
     () =>
       process.env.ORBIT_DISABLE_TREESITTER === "1"
@@ -71,6 +94,12 @@ export function DiffView({
         : getTreeSitterClient(),
     [],
   );
+  const highlightSourceDiff = fullDiff ?? file.rawDiff;
+  highlightDiffsRef.current = {
+    fullDiff: highlightSourceDiff,
+    visibleDiff: file.rawDiff,
+  };
+  const rawFiletype = useMemo(() => getFiletype(file.path), [file.path]);
   // Track scroll position in a ref to avoid relying on scrollbox's internal
   // scrollTop which can get reset/clamped when the scrollbox height changes
   // (e.g. comment-input half-height → diff-view full-height transition).
@@ -108,6 +137,54 @@ export function DiffView({
     () => comments.filter((c) => c.filePath === file.path),
     [comments, file.path],
   );
+
+  useEffect(() => {
+    const diff = diffRef.current;
+    if (!diff?.leftCodeRenderable || !rawFiletype || !treeSitterClient) return;
+
+    if (splitMode) {
+      diff.leftCodeRenderable.onHighlight = async (_highlights, context) =>
+        buildSplitProjectedHighlights(
+          highlightDiffsRef.current.fullDiff,
+          highlightDiffsRef.current.visibleDiff,
+          context.filetype,
+          "left",
+          treeSitterClient,
+        );
+      if (diff.rightCodeRenderable) {
+        diff.rightCodeRenderable.onHighlight = async (_highlights, context) =>
+          buildSplitProjectedHighlights(
+            highlightDiffsRef.current.fullDiff,
+            highlightDiffsRef.current.visibleDiff,
+            context.filetype,
+            "right",
+            treeSitterClient,
+          );
+      }
+    } else {
+      diff.leftCodeRenderable.onHighlight = async (_highlights, context) =>
+        buildUnifiedProjectedHighlights(
+          highlightDiffsRef.current.fullDiff,
+          highlightDiffsRef.current.visibleDiff,
+          context.filetype,
+          treeSitterClient,
+        );
+    }
+
+    if (typeof diff.buildView === "function") {
+      diff.buildView();
+      if ("pendingRebuild" in diff) diff.pendingRebuild = false;
+    }
+
+    return () => {
+      if (diff.leftCodeRenderable) {
+        diff.leftCodeRenderable.onHighlight = undefined;
+      }
+      if (diff.rightCodeRenderable) {
+        diff.rightCodeRenderable.onHighlight = undefined;
+      }
+    };
+  }, [splitMode, rawFiletype, treeSitterClient]);
 
   // Side-aware comment matching: check comment's side against cursor's source line for that side
   const cursorSource = useMemo(
@@ -384,7 +461,7 @@ export function DiffView({
           wrapMode="none"
           width={width}
           syntaxStyle={syntaxStyle}
-          filetype={getFiletype(file.path)}
+          filetype={rawFiletype}
           treeSitterClient={treeSitterClient}
           onMouseDown={(event: MouseEvent) => {
             handleClick(event);

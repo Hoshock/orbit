@@ -1,4 +1,8 @@
-import { type DiffRenderable, getTreeSitterClient } from "@opentui/core";
+import {
+  type CodeRenderable,
+  type DiffRenderable,
+  getTreeSitterClient,
+} from "@opentui/core";
 import { useEffect, useMemo, useRef } from "react";
 import { COLORS } from "../constants.ts";
 import { collapseDiff } from "../data/diff-collapse.ts";
@@ -8,6 +12,10 @@ import {
 } from "../data/diff-parser.ts";
 import { syntaxStyle } from "../theme.ts";
 import type { DiffFile, ReviewComment } from "../types.ts";
+import {
+  buildSplitProjectedHighlights,
+  buildUnifiedProjectedHighlights,
+} from "../utils/diff-syntax.ts";
 import { getFiletype } from "../utils/filetype.ts";
 
 interface DiffPreviewProps {
@@ -28,6 +36,18 @@ type DiffRuntime = DiffRenderable & {
   pendingRebuild?: boolean;
   leftSide?: LineColorTarget;
   rightSide?: LineColorTarget;
+  leftCodeRenderable?: CodeRenderable & {
+    onHighlight?: (
+      highlights: unknown[],
+      context: { content: string; filetype: string },
+    ) => Promise<unknown[]> | unknown[];
+  };
+  rightCodeRenderable?: CodeRenderable & {
+    onHighlight?: (
+      highlights: unknown[],
+      context: { content: string; filetype: string },
+    ) => Promise<unknown[]> | unknown[];
+  };
 };
 
 export function DiffPreview({
@@ -39,12 +59,20 @@ export function DiffPreview({
   expandedFolds,
 }: DiffPreviewProps) {
   const diffRef = useRef<DiffRuntime | null>(null);
+  const highlightDiffsRef = useRef({
+    fullDiff: "",
+    visibleDiff: "",
+  });
   const treeSitterClient = useMemo(
     () =>
       process.env.ORBIT_DISABLE_TREESITTER === "1"
         ? undefined
         : getTreeSitterClient(),
     [],
+  );
+  const rawFiletype = useMemo(
+    () => (file ? getFiletype(file.path) : undefined),
+    [file],
   );
   const markerWidth = splitMode ? Math.floor(width / 2) : width;
   const collapsedDiff = useMemo(
@@ -55,10 +83,63 @@ export function DiffPreview({
         : "",
     [file?.rawDiff, file, expandedFolds, markerWidth],
   );
+  highlightDiffsRef.current = {
+    fullDiff: file?.rawDiff ?? "",
+    visibleDiff: collapsedDiff,
+  };
   const fileComments = useMemo(
     () => (file ? comments.filter((c) => c.filePath === file.path) : []),
     [comments, file?.path, file],
   );
+
+  useEffect(() => {
+    const diff = diffRef.current;
+    if (!diff?.leftCodeRenderable || !file || !rawFiletype || !treeSitterClient)
+      return;
+
+    if (splitMode) {
+      diff.leftCodeRenderable.onHighlight = async (_highlights, context) =>
+        buildSplitProjectedHighlights(
+          highlightDiffsRef.current.fullDiff,
+          highlightDiffsRef.current.visibleDiff,
+          context.filetype,
+          "left",
+          treeSitterClient,
+        );
+      if (diff.rightCodeRenderable) {
+        diff.rightCodeRenderable.onHighlight = async (_highlights, context) =>
+          buildSplitProjectedHighlights(
+            highlightDiffsRef.current.fullDiff,
+            highlightDiffsRef.current.visibleDiff,
+            context.filetype,
+            "right",
+            treeSitterClient,
+          );
+      }
+    } else {
+      diff.leftCodeRenderable.onHighlight = async (_highlights, context) =>
+        buildUnifiedProjectedHighlights(
+          highlightDiffsRef.current.fullDiff,
+          highlightDiffsRef.current.visibleDiff,
+          context.filetype,
+          treeSitterClient,
+        );
+    }
+
+    if (typeof diff.buildView === "function") {
+      diff.buildView();
+      if ("pendingRebuild" in diff) diff.pendingRebuild = false;
+    }
+
+    return () => {
+      if (diff.leftCodeRenderable) {
+        diff.leftCodeRenderable.onHighlight = undefined;
+      }
+      if (diff.rightCodeRenderable) {
+        diff.rightCodeRenderable.onHighlight = undefined;
+      }
+    };
+  }, [file, splitMode, rawFiletype, treeSitterClient]);
 
   useEffect(() => {
     if (!file) return;
@@ -128,7 +209,7 @@ export function DiffPreview({
           wrapMode="none"
           width={width}
           syntaxStyle={syntaxStyle}
-          filetype={getFiletype(file.path)}
+          filetype={rawFiletype}
           treeSitterClient={treeSitterClient}
         />
       </scrollbox>

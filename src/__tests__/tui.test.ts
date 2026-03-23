@@ -89,6 +89,42 @@ function makeFoldHeavyDiff(): string {
   return `${header}\n${hunk}`;
 }
 
+function makeMultiFoldDiff(): string {
+  const header = [
+    "diff --git a/file.ts b/file.ts",
+    "index abc..def 100644",
+    "--- a/file.ts",
+    "+++ b/file.ts",
+  ].join("\n");
+  const hunk = [
+    "@@ -1,21 +1,21 @@",
+    "-old1",
+    "+new1",
+    " ctx1-a",
+    " ctx1-b",
+    " ctx1-c",
+    " fold1-hidden",
+    " ctx1-d",
+    " ctx1-e",
+    " ctx1-f",
+    "-old2",
+    "+new2",
+    " ctx2-a",
+    " ctx2-b",
+    " ctx2-c",
+    " fold2-hidden",
+    " ctx2-d",
+    " ctx2-e",
+    " ctx2-f",
+    "-old3",
+    "+new3",
+    " tail-a",
+    " tail-b",
+    " tail-c",
+  ].join("\n");
+  return `${header}\n${hunk}`;
+}
+
 function makeLongAddedDiff(lines = 80): string {
   const header = [
     "diff --git a/long.ts b/long.ts",
@@ -595,6 +631,71 @@ describe("App integration", () => {
       if (patchedDiff && originalBuildView) {
         patchedDiff.buildView = originalBuildView;
       }
+    }
+  });
+
+  it("toggles every fold in the file when pressing Z", async () => {
+    commentStore.reset();
+    const files: DiffFile[] = [
+      makeFile({
+        path: "file.ts",
+        rawDiff: makeMultiFoldDiff(),
+        additions: 3,
+        deletions: 3,
+      }),
+    ];
+
+    const { captureCharFrame, mockInput, renderOnce, renderer } =
+      await testRender(
+        createElement(App, {
+          files,
+          options: {
+            base: "HEAD~1",
+            target: "HEAD",
+            splitMode: false,
+            root: false,
+          },
+          onQuit: () => {},
+        }),
+        RENDER_OPTS,
+      );
+
+    try {
+      await renderOnce();
+      await act(async () => {
+        mockInput.pressEnter();
+        await renderOnce();
+      });
+
+      expect(captureCharFrame()).toContain("lines hidden");
+      expect(captureCharFrame()).not.toContain("fold1-hidden");
+      expect(captureCharFrame()).not.toContain("fold2-hidden");
+
+      await act(async () => {
+        mockInput.pressKey("z", { shift: true });
+        await renderOnce();
+      });
+      await renderOnce();
+
+      const frame = captureCharFrame();
+      expect(frame).not.toContain("lines hidden");
+      expect(frame).toContain("fold1-hidden");
+      expect(frame).toContain("fold2-hidden");
+
+      await act(async () => {
+        mockInput.pressKey("z", { shift: true });
+        await renderOnce();
+      });
+      await renderOnce();
+
+      const collapsedAgain = captureCharFrame();
+      expect(collapsedAgain).toContain("lines hidden");
+      expect(collapsedAgain).not.toContain("fold1-hidden");
+      expect(collapsedAgain).not.toContain("fold2-hidden");
+    } finally {
+      await act(async () => {
+        renderer.destroy();
+      });
     }
   });
 

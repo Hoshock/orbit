@@ -1,16 +1,5 @@
-import { dirname, resolve } from "node:path";
-import {
-  addDefaultParsers,
-  type CliRenderer,
-  createCliRenderer,
-} from "@opentui/core";
+import { type CliRenderer, createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import pythonHighlights from "../assets/tree-sitter/python/highlights.scm" with {
-  type: "file",
-};
-import pythonWasm from "../assets/tree-sitter/python/tree-sitter-python.wasm" with {
-  type: "file",
-};
 import { App } from "./app.tsx";
 import { buildDiffArgs, parseArgs } from "./cli/args.ts";
 import { commentStore } from "./data/comment-store.ts";
@@ -21,6 +10,7 @@ import {
   getSessionCachePath,
   loadSessionState,
 } from "./data/persistence.ts";
+import { registerSyntaxParsers } from "./syntax-parsers.ts";
 import {
   getEmptyTreeHash,
   getRepoRoot,
@@ -28,14 +18,7 @@ import {
   resolveShortHash,
 } from "./utils/git.ts";
 
-const __dir = dirname(new URL(import.meta.url).pathname);
-addDefaultParsers([
-  {
-    filetype: "python",
-    wasm: resolve(__dir, pythonWasm),
-    queries: { highlights: [resolve(__dir, pythonHighlights)] },
-  },
-]);
+registerSyntaxParsers();
 
 let renderer: CliRenderer;
 
